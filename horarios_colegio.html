@@ -27,6 +27,7 @@
     --nlal:#ffe8cc; --nlal-b:#e67e22;
     --cra:#f0e6ff; --cra-b:#7c4dff;
     --fc:#e0ecff; --fc-b:#2f6fed;
+    --emergencia:#ffe0e0; --emergencia-b:#d43d3d;
     --radius:10px;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }
@@ -97,6 +98,7 @@
   td.cat-nlal{background:var(--nlal);}
   td.cat-cra{background:var(--cra);}
   td.cat-fc{background:var(--fc);}
+  td.cat-emergencia{background:var(--emergencia);}
   .legend{display:flex; gap:10px; flex-wrap:wrap; font-size:11.5px; margin-top:8px; color:var(--ink-soft);}
   .legend span{display:inline-flex; align-items:center; gap:5px;}
   .swatch{width:12px; height:12px; border-radius:3px; display:inline-block; border:1px solid rgba(0,0,0,.15);}
@@ -183,7 +185,7 @@
   <button data-tab="cursos">Cursos</button>
   <button data-tab="horas">Horas Adicionales</button>
   <button data-tab="reemplazos">Reemplazos</button>
-  <button data-tab="pool">Pool de Reemplazo</button>
+  <button data-tab="pool">Profesores PAD/Otros</button>
   <button data-tab="reportes">Reportes</button>
 </nav>
 
@@ -201,6 +203,7 @@
           <div class="search-results" id="teacherResults"></div>
         </div>
       </div>
+      <button class="btn primary" id="btnNewTeacher">+ Crear profesor(a)</button>
     </div>
   </div>
   <div id="teacherDetail"></div>
@@ -268,12 +271,16 @@
 <!-- TAB POOL -->
 <section id="tab-pool" class="tabpanel" style="display:none;">
   <div class="panel">
-    <h2>Pool de profesores(as) disponibles para reemplazo</h2>
-    <p class="helptext">Agrega personas que no están en el horario base (por ejemplo, docentes de apoyo, reemplazantes externos). Puedes dejarlas disponibles para cualquier horario, o definir un horario de disponibilidad específico -incluyendo bloques marcados como <b>Horas PAD</b>- para que solo aparezcan como candidatas en esos momentos.</p>
+    <h2>Profesores PAD/Otros disponibles para reemplazo</h2>
+    <p class="helptext">Agrega personas que no están en el horario base (por ejemplo, docentes con Horas PAD, reemplazantes externos o de emergencia). Puedes dejarlas disponibles para cualquier horario, o definir un horario de disponibilidad específico -marcando cada bloque como <b>Horas PAD</b> o <b>Emergencia</b>- para que solo aparezcan como candidatas en esos momentos.</p>
     <div class="row">
       <div class="field">
         <label>Nombre</label>
         <input type="text" id="poolName" placeholder="Nombre completo">
+      </div>
+      <div class="field">
+        <label>Correo electrónico (opcional)</label>
+        <input type="text" id="poolEmail" placeholder="nombre@correo.com">
       </div>
       <div class="field">
         <label>Nota / especialidad (opcional)</label>
@@ -314,10 +321,44 @@
       <button class="btn" id="btnCsvReport">⬇ Exportar CSV</button>
     </div>
   </div>
+  <div class="panel" id="printHeader" style="display:flex; justify-content:space-between; align-items:baseline;">
+    <h2 style="margin:0;">Reporte de Horas de Reemplazo</h2>
+    <div id="printDate" style="font-size:13px; color:var(--ink-soft); font-weight:600;"></div>
+  </div>
   <div class="panel" id="reportSummaryPanel"></div>
   <div class="panel">
     <h2>Detalle de reemplazos</h2>
     <div id="reportDetail"></div>
+  </div>
+
+  <div class="panel no-print">
+    <h2>Reporte diario para enviar por correo</h2>
+    <p class="helptext">Genera el reporte de un día específico y envíalo directamente por correo a cada profesor(a) que hizo un reemplazo ese día (usando el correo que le asignaste en la pestaña Profesores o en Profesores PAD/Otros), con copia a hasta 3 destinatarios.</p>
+    <div class="row">
+      <div class="field">
+        <label>Fecha del reporte</label>
+        <input type="date" id="dailyRepDate">
+      </div>
+      <div class="field">
+        <label>Copia (CC) 1 (opcional)</label>
+        <input type="text" id="dailyCc1" placeholder="correo@colegio.cl">
+      </div>
+      <div class="field">
+        <label>Copia (CC) 2 (opcional)</label>
+        <input type="text" id="dailyCc2" placeholder="correo@colegio.cl">
+      </div>
+      <div class="field">
+        <label>Copia (CC) 3 (opcional)</label>
+        <input type="text" id="dailyCc3" placeholder="correo@colegio.cl">
+      </div>
+      <button class="btn" id="btnDailyPreview">Generar vista previa</button>
+    </div>
+    <div id="dailyReportPreview" style="margin-top:14px;"></div>
+    <div class="row" style="margin-top:12px;">
+      <button class="btn accent" id="btnDailyPrint">🖨 Imprimir reporte del día</button>
+      <button class="btn primary" id="btnDailySend">✉️ Enviar por correo a reemplazantes</button>
+    </div>
+    <div id="dailySendStatus" class="helptext" style="margin-top:8px;"></div>
   </div>
 </section>
 
@@ -333,7 +374,7 @@
 
 // ================= GOOGLE SHEETS SYNC =================
 const GOOGLE_CLIENT_ID = '930786063080-17c8i334uuuh4jb0okd4kj4fautjsqfm.apps.googleusercontent.com';
-const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file';
+const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/gmail.send';
 const SHEET_ID_KEY = 'colegio_horarios_sheet_id_v1';
 const SHEET_TABS = ['Reemplazos','Pool','HorasAdicionales','Asignaturas'];
 
@@ -611,11 +652,11 @@ const CATS = {
   'otro': {label:'Otra actividad', cls:'cat-otro'}
 };
 
-// Categories for pool-member weekly availability
+// Categories for pool-member (Profesores PAD/Otros) weekly availability
 const POOL_CATS = {
   '': {label:'No disponible', cls:'cat-vacio'},
-  'disponible': {label:'Disponible para reemplazo', cls:'cat-disponible'},
-  'pad': {label:'Horas PAD', cls:'cat-pad'}
+  'pad': {label:'Horas PAD', cls:'cat-pad'},
+  'emergencia': {label:'Emergencia', cls:'cat-emergencia'}
 };
 
 // Listado oficial de asignaturas disponibles para asignar a cada profesor(a)/curso
@@ -638,7 +679,10 @@ const ASIGNATURAS = [
 ];
 
 function defaultState(){
-  return { version:2, extraHours:{}, subjects:{}, pool:[], replacements:[] };
+  return {
+    version:3, extraHours:{}, subjects:{}, pool:[], replacements:[],
+    customTeachers:[], deletedTeachers:[], teacherOverrides:{}, teacherEmails:{}
+  };
 }
 
 let STATE = loadState();
@@ -649,8 +693,8 @@ function loadState(){
     if(raw){
       const parsed = JSON.parse(raw);
       const merged = Object.assign(defaultState(), parsed);
-      // migrate pool entries to have availability object
-      merged.pool = (merged.pool||[]).map(p=> Object.assign({availability:{}}, p));
+      // migrate pool entries to have availability object + email field
+      merged.pool = (merged.pool||[]).map(p=> Object.assign({availability:{}, email:''}, p));
       return merged;
     }
   }catch(e){ console.warn('No se pudo leer almacenamiento local', e); }
@@ -673,7 +717,61 @@ function toast(msg){
 }
 
 // ---------- helpers over DATA ----------
-function teacherById(id){ return DATA.teachers.find(t=>t.id===id); }
+// ---------- teacher roster management (create / edit / delete on top of the imported Excel data) ----------
+function blankSchedule(){
+  const days = {};
+  DAYS.forEach(d=>{
+    days[d] = DATA.periodsByDay[d].map(p=>({time:p.time, isBreak:p.isBreak, raw:null, courses:[]}));
+  });
+  return days;
+}
+
+function slugifyId(name){
+  const s = name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-');
+  return 'custom-' + s.replace(/^-+|-+$/g,'') + '-' + Math.random().toString(36).slice(2,6);
+}
+
+function allTeachers(){
+  const base = [...DATA.teachers, ...STATE.customTeachers];
+  return base
+    .filter(t=> !STATE.deletedTeachers.includes(t.id))
+    .map(t=>{
+      const override = STATE.teacherOverrides[t.id];
+      return override && override.name ? Object.assign({}, t, {name: override.name}) : t;
+    });
+}
+
+function teacherById(id){ return allTeachers().find(t=>t.id===id); }
+
+function createTeacher(name){
+  const id = slugifyId(name);
+  STATE.customTeachers.push({ id, name, days: blankSchedule(), custom:true });
+  saveState();
+  return id;
+}
+
+function renameTeacher(id, newName){
+  STATE.teacherOverrides[id] = Object.assign({}, STATE.teacherOverrides[id], {name:newName});
+  saveState();
+}
+
+function deleteTeacher(id){
+  const isCustom = STATE.customTeachers.some(t=>t.id===id);
+  if(isCustom){
+    STATE.customTeachers = STATE.customTeachers.filter(t=>t.id!==id);
+  } else {
+    if(!STATE.deletedTeachers.includes(id)) STATE.deletedTeachers.push(id);
+  }
+  delete STATE.teacherOverrides[id];
+  delete STATE.teacherEmails[id];
+  saveState();
+}
+
+function getTeacherEmail(id){ return STATE.teacherEmails[id] || ''; }
+function setTeacherEmail(id, email){
+  if(email) STATE.teacherEmails[id] = email; else delete STATE.teacherEmails[id];
+  saveState();
+}
 
 function courseSortKey(c){
   const order = ['PK','K','1','2','3','4','5','6','7','8','I','II','III','IV'];
@@ -763,13 +861,13 @@ function poolHasAnyAvailability(pool){
   return Object.values(pool.availability).some(dayObj => Object.keys(dayObj||{}).length>0);
 }
 function poolAvailCounts(pool){
-  let disponible=0, pad=0;
+  let pad=0, emergencia=0;
   if(pool.availability){
     Object.values(pool.availability).forEach(dayObj=>{
-      Object.values(dayObj||{}).forEach(v=>{ if(v==='disponible') disponible++; else if(v==='pad') pad++; });
+      Object.values(dayObj||{}).forEach(v=>{ if(v==='pad') pad++; else if(v==='emergencia') emergencia++; });
     });
   }
-  return {disponible, pad, total: disponible+pad};
+  return {pad, emergencia, total: pad+emergencia};
 }
 
 // ---------- tabs ----------
@@ -786,7 +884,7 @@ document.querySelectorAll('nav.tabs button').forEach(btn=>{
 // ---------- header summary ----------
 function renderHeaderSummary(){
   document.getElementById('dataSummary').textContent =
-    `${DATA.teachers.length} profesores(as) · ${DATA.allCourses.length} cursos · ${STATE.pool.length} en pool · ${STATE.replacements.length} reemplazos registrados`;
+    `${allTeachers().length} profesores(as) · ${DATA.allCourses.length} cursos · ${STATE.pool.length} en Profesores PAD/Otros · ${STATE.replacements.length} reemplazos registrados`;
 }
 
 // ================= TAB PROFESORES =================
@@ -797,7 +895,7 @@ let currentTeacherId = null;
 teacherSearch.addEventListener('input', ()=>{
   const q = teacherSearch.value.trim().toLowerCase();
   if(!q){ teacherResults.classList.remove('show'); return; }
-  const matches = DATA.teachers.filter(t=>t.name.toLowerCase().includes(q)).slice(0,30);
+  const matches = allTeachers().filter(t=>t.name.toLowerCase().includes(q)).slice(0,30);
   teacherResults.innerHTML = matches.map(t=>`<div data-id="${t.id}">${t.name}</div>`).join('') || '<div style="color:#999;">Sin resultados</div>';
   teacherResults.classList.add('show');
 });
@@ -816,6 +914,16 @@ function selectTeacher(id){
   currentTeacherId = id;
   renderTeacherDetail(id);
 }
+
+document.getElementById('btnNewTeacher').addEventListener('click', ()=>{
+  const name = prompt('Nombre completo del nuevo profesor(a):');
+  if(!name || !name.trim()) return;
+  const id = createTeacher(name.trim());
+  teacherSearch.value = name.trim();
+  renderHeaderSummary();
+  selectTeacher(id);
+  toast('Profesor(a) creado(a). Su horario parte vacío: puedes categorizar sus horas en la pestaña Horas Adicionales.');
+});
 
 function periodsForDay(day){
   return DATA.periodsByDay[day];
@@ -900,7 +1008,19 @@ function renderTeacherDetail(id){
   const repHoras = replacementHoursForTeacher(teacher.id, false);
   wrap.innerHTML = `
     <div class="panel">
-      <h2>${escapeHtml(teacher.name)}</h2>
+      <div class="row" style="justify-content:space-between; align-items:center;">
+        <h2 style="margin:0;">${escapeHtml(teacher.name)}</h2>
+        <div class="no-print" style="display:flex; gap:6px;">
+          <button class="btn small" id="btnEditTeacherName">✏️ Editar nombre</button>
+          <button class="btn small danger" id="btnDeleteTeacher">🗑️ Eliminar profesor(a)</button>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <div class="field" style="min-width:280px;">
+          <label>Correo electrónico</label>
+          <input type="text" id="teacherEmailInput" value="${escapeHtml(getTeacherEmail(teacher.id))}" placeholder="nombre@correo.com">
+        </div>
+      </div>
       <div class="summary-grid">
         <div class="stat"><div class="num">${stats.lectivas}</div><div class="lbl">Horas lectivas</div></div>
         <div class="stat"><div class="num">${stats.cat.libre}</div><div class="lbl">NLP (Libre disposición)</div></div>
@@ -952,6 +1072,28 @@ function renderTeacherDetail(id){
       renderTeacherDetail(id); // refresh grid labels
     });
   });
+  document.getElementById('teacherEmailInput').addEventListener('change', (e)=>{
+    setTeacherEmail(teacher.id, e.target.value.trim());
+    toast('Correo guardado');
+  });
+  document.getElementById('btnEditTeacherName').addEventListener('click', ()=>{
+    const newName = prompt('Nuevo nombre para este profesor(a):', teacher.name);
+    if(newName && newName.trim() && newName.trim()!==teacher.name){
+      renameTeacher(teacher.id, newName.trim());
+      toast('Nombre actualizado');
+      renderTeacherDetail(id);
+      renderHeaderSummary();
+    }
+  });
+  document.getElementById('btnDeleteTeacher').addEventListener('click', ()=>{
+    if(!confirm(`¿Eliminar a "${teacher.name}" del listado de profesores(as)? Esto no borra los reemplazos ya registrados a su nombre, pero dejará de aparecer en búsquedas, horarios y como candidato(a) a reemplazo. Esta acción se puede revertir solo restableciendo todos los datos agregados.`)) return;
+    deleteTeacher(teacher.id);
+    currentTeacherId = null;
+    teacherSearch.value = '';
+    wrap.innerHTML = '';
+    toast('Profesor(a) eliminado(a)');
+    renderHeaderSummary();
+  });
 }
 
 // ================= TAB CURSOS =================
@@ -977,7 +1119,7 @@ function renderCourseDetail(course){
       const p = periodsForDay(day)[i];
       if(!p){ html += '<td></td>'; return; }
       if(p.isBreak){ html += '<td class="break">Recreo</td>'; return; }
-      const teachersHere = DATA.teachers.filter(t=>{
+      const teachersHere = allTeachers().filter(t=>{
         const slot = (t.days[day]||[])[i];
         return slot && slot.courses && slot.courses.includes(course);
       });
@@ -1003,7 +1145,7 @@ function renderCourseDetail(course){
 const horasTeacherSelect = document.getElementById('horasTeacherSelect');
 function initHorasSelect(){
   horasTeacherSelect.innerHTML = '<option value="">Selecciona...</option>' +
-    DATA.teachers.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+    allTeachers().map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
 }
 horasTeacherSelect.addEventListener('change', ()=> renderHorasDetail(horasTeacherSelect.value));
 
@@ -1034,7 +1176,7 @@ const repPeriodsWrap = document.getElementById('repPeriods');
 
 function initRepSelect(){
   repTeacherSelect.innerHTML = '<option value="">Selecciona...</option>' +
-    DATA.teachers.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+    allTeachers().map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
   const today = new Date();
   repDate.value = today.toISOString().slice(0,10);
 }
@@ -1059,9 +1201,16 @@ function isTeacherBusyAt(teacherId, day, time, excludeReplacementId){
   return {busy:false};
 }
 
+// Prioridad para ordenar candidatos a reemplazo: 1° Horas PAD, 2° NLP (libre disposición), 3° el resto.
+function candidatePriority(catKey){
+  if(catKey === 'pad') return 0;
+  if(catKey === '' || catKey === 'libre') return 1;
+  return 2;
+}
+
 function candidatesFor(day, time, excludeTeacherId){
   const list = [];
-  DATA.teachers.forEach(t=>{
+  allTeachers().forEach(t=>{
     if(t.id===excludeTeacherId) return;
     const slot = (t.days[day]||[]).find(s=>s.time===time);
     if(!slot || slot.isBreak) return;
@@ -1069,8 +1218,9 @@ function candidatesFor(day, time, excludeTeacherId){
     const busyCheck = isTeacherBusyAt(t.id, day, time);
     if(busyCheck.busy && busyCheck.reason==='Ya asignado(a) a otro reemplazo') return;
     const cat = getExtra(t.id, day, time);
+    const catKey = cat || 'libre';
     const free = !cat || cat==='libre';
-    list.push({id:t.id, name:t.name, isPool:false, free, catLabel: cat ? CATS[cat].label : 'NLP'});
+    list.push({id:t.id, name:t.name, isPool:false, free, catKey, catLabel: cat ? CATS[cat].label : 'NLP'});
   });
   STATE.pool.forEach(p=>{
     const clash = STATE.replacements.find(r=> r.subIsPool && r.subTeacherId===p.id && r.day===day && r.periods.some(pp=>pp.time===time));
@@ -1079,13 +1229,13 @@ function candidatesFor(day, time, excludeTeacherId){
     if(hasSchedule){
       const avail = getPoolAvail(p, day, time);
       if(!avail) return; // not marked available at this exact block
-      list.push({id:p.id, name:p.name+' (Pool)', isPool:true, free:true, catLabel: POOL_CATS[avail].label, isPad: avail==='pad'});
+      list.push({id:p.id, name:p.name+' (PAD/Otros)', isPool:true, free:true, catKey: avail, catLabel: POOL_CATS[avail].label, isPad: avail==='pad'});
     } else {
       // no availability schedule configured: treat as always available (legacy behavior)
-      list.push({id:p.id, name:p.name+' (Pool)', isPool:true, free:true, catLabel:'Externo/Pool (sin horario definido)'});
+      list.push({id:p.id, name:p.name+' (PAD/Otros)', isPool:true, free:true, catKey:'otro', catLabel:'Externo/Pool (sin horario definido)'});
     }
   });
-  list.sort((a,b)=> (b.free-a.free) || a.name.localeCompare(b.name));
+  list.sort((a,b)=> candidatePriority(a.catKey)-candidatePriority(b.catKey) || a.name.localeCompare(b.name));
   return list;
 }
 
@@ -1228,11 +1378,11 @@ function renderPoolList(){
     <div class="list-item pool-item">
       <div class="pool-head">
         <div>
-          <b>${escapeHtml(p.name)}</b>
+          <b>${escapeHtml(p.name)}</b>${p.email?` <span class="meta">(${escapeHtml(p.email)})</span>`:''}
           <div class="meta">
             ${escapeHtml(p.note||'')} ${p.hours?('· '+p.hours+' hrs/semana contratadas'):''}
             · ${replacementHoursForTeacher(p.id,true)} hrs de reemplazo realizadas
-            ${hasSchedule ? `· ${counts.disponible} hrs disponibles${counts.pad? ' · '+counts.pad+' hrs PAD':''}` : '· sin horario definido (disponible siempre)'}
+            ${hasSchedule ? `· ${counts.pad} hrs PAD${counts.emergencia? ' · '+counts.emergencia+' hrs Emergencia':''}` : '· sin horario definido (disponible siempre)'}
           </div>
         </div>
         <div class="no-print" style="display:flex; gap:6px;">
@@ -1274,7 +1424,7 @@ function renderPoolList(){
       const hasSchedule = poolHasAnyAvailability(p);
       metaEl.innerHTML = `${escapeHtml(p.note||'')} ${p.hours?('· '+p.hours+' hrs/semana contratadas'):''}
             · ${replacementHoursForTeacher(p.id,true)} hrs de reemplazo realizadas
-            ${hasSchedule ? `· ${counts.disponible} hrs disponibles${counts.pad? ' · '+counts.pad+' hrs PAD':''}` : '· sin horario definido (disponible siempre)'}`;
+            ${hasSchedule ? `· ${counts.pad} hrs PAD${counts.emergencia? ' · '+counts.emergencia+' hrs Emergencia':''}` : '· sin horario definido (disponible siempre)'}`;
       renderRepPeriods();
     });
   });
@@ -1284,12 +1434,14 @@ document.getElementById('btnAddPool').addEventListener('click', ()=>{
   if(!name){ toast('Ingresa un nombre'); return; }
   const note = document.getElementById('poolNote').value.trim();
   const hours = document.getElementById('poolHours').value;
+  const email = document.getElementById('poolEmail').value.trim();
   const id = 'p_'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
-  STATE.pool.push({id, name, note, hours: hours?Number(hours):null, availability:{}});
+  STATE.pool.push({id, name, note, email, hours: hours?Number(hours):null, availability:{}});
   saveState();
   document.getElementById('poolName').value='';
   document.getElementById('poolNote').value='';
   document.getElementById('poolHours').value='';
+  document.getElementById('poolEmail').value='';
   expandedPoolId = id;
   renderPoolList();
   toast('Agregado al pool. Puedes definir sus horas disponibles o PAD abajo.');
@@ -1299,9 +1451,15 @@ document.getElementById('btnAddPool').addEventListener('click', ()=>{
 function initReportFilters(){
   const sel = document.getElementById('repFilterTeacher');
   const allSubs = new Map();
-  DATA.teachers.forEach(t=>allSubs.set(t.id, t.name));
+  allTeachers().forEach(t=>allSubs.set(t.id, t.name));
   STATE.pool.forEach(p=>allSubs.set(p.id, p.name+' (Pool)'));
   sel.innerHTML = '<option value="">Todos</option>' + [...allSubs.entries()].map(([id,name])=>`<option value="${id}">${name}</option>`).join('');
+}
+
+function formatDateEs(dateStr){
+  if(!dateStr) return '';
+  const d = new Date(dateStr+'T00:00:00');
+  return d.toLocaleDateString('es-CL', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
 }
 
 function renderReport(){
@@ -1326,6 +1484,9 @@ function renderReport(){
   });
   const summaryRows = [...bySub.values()].sort((a,b)=> b.hours-a.hours);
   const totalHoras = summaryRows.reduce((s,x)=>s+x.hours,0);
+
+  document.getElementById('printDate').textContent =
+    (from || to) ? `Rango: ${from||'—'} a ${to||'—'}` : 'Fecha de emisión: ' + formatDateEs(new Date().toISOString().slice(0,10));
 
   document.getElementById('reportSummaryPanel').innerHTML = `
     <h2>Resumen de horas de reemplazo por profesor(a)</h2>
@@ -1374,6 +1535,164 @@ document.getElementById('btnCsvReport').addEventListener('click', ()=>{
   a.download = 'reporte_reemplazos.csv';
   a.click();
 });
+
+// ---------- Reporte diario para enviar por correo ----------
+function getEmailForSub(id, isPool){
+  if(isPool){ const p = STATE.pool.find(x=>x.id===id); return p ? (p.email||'') : ''; }
+  return getTeacherEmail(id);
+}
+
+function computeDailyGroups(date){
+  const records = STATE.replacements.filter(r=>r.date===date)
+    .sort((a,b)=> (a.periods[0]&&a.periods[0].time||'').localeCompare(b.periods[0]&&b.periods[0].time||''));
+  const bySub = new Map();
+  records.forEach(r=>{
+    const key = r.subTeacherId+(r.subIsPool?'|pool':'');
+    if(!bySub.has(key)) bySub.set(key, {id:r.subTeacherId, isPool:r.subIsPool, name:r.subTeacherName, items:[], hours:0});
+    const g = bySub.get(key);
+    g.items.push(r);
+    g.hours += r.periods.length;
+  });
+  return { records, groups: [...bySub.values()].sort((a,b)=> b.hours-a.hours) };
+}
+
+function renderDailyPreview(){
+  const date = document.getElementById('dailyRepDate').value;
+  const wrap = document.getElementById('dailyReportPreview');
+  if(!date){ wrap.innerHTML = '<div class="empty-state">Selecciona una fecha.</div>'; return; }
+  const { records, groups } = computeDailyGroups(date);
+  document.getElementById('printDate').textContent = 'Fecha: ' + formatDateEs(date);
+  if(!records.length){ wrap.innerHTML = `<div class="empty-state">No hay reemplazos registrados para el ${formatDateEs(date)}.</div>`; return; }
+  wrap.innerHTML = groups.map(g=>{
+    const email = getEmailForSub(g.id, g.isPool);
+    return `<div class="list-item" style="flex-direction:column; align-items:stretch;">
+      <div class="pool-head">
+        <b>${escapeHtml(g.name)}</b>
+        <span class="${email?'badge ok':'badge warn'}">${email? escapeHtml(email) : 'Sin correo asignado — no se enviará'}</span>
+      </div>
+      <table style="margin-top:8px;">
+        <thead><tr><th>Hora</th><th>Curso</th><th>Profesor(a) ausente</th></tr></thead>
+        <tbody>
+          ${g.items.map(r=>`<tr><td>${r.periods.map(p=>p.time).join(', ')}</td><td>${escapeHtml(r.periods.map(p=>p.course).join(', '))}</td><td>${escapeHtml(r.teacherAbsentName)}</td></tr>`).join('')}
+        </tbody>
+      </table>
+      <div class="meta" style="margin-top:4px;">Total: ${g.hours} hora(s) pedagógica(s) de reemplazo</div>
+    </div>`;
+  }).join('');
+}
+document.getElementById('btnDailyPreview').addEventListener('click', renderDailyPreview);
+
+function renderDailyIntoMainReport(date){
+  const { records, groups } = computeDailyGroups(date);
+  const totalHoras = groups.reduce((s,g)=>s+g.hours,0);
+  document.getElementById('printDate').textContent = 'Fecha: ' + formatDateEs(date);
+  document.getElementById('reportSummaryPanel').innerHTML = `
+    <h2>Resumen de horas de reemplazo — ${formatDateEs(date)}</h2>
+    <table id="reportTable">
+      <thead><tr><th>Profesor(a) reemplazante</th><th>Horas pedagógicas de reemplazo</th></tr></thead>
+      <tbody>
+        ${groups.map(g=>`<tr><td>${escapeHtml(g.name)}${g.isPool?' <span class="badge pool">PAD/Otros</span>':''}</td><td>${g.hours}</td></tr>`).join('') || '<tr><td colspan="2" style="color:#999;">Sin registros ese día.</td></tr>'}
+        <tr class="report-total-row"><td>Total</td><td>${totalHoras}</td></tr>
+      </tbody>
+    </table>
+  `;
+  document.getElementById('reportDetail').innerHTML = `
+    <table>
+      <thead><tr><th>Hora</th><th>Curso</th><th>Profesor(a) ausente</th><th>Reemplazante</th><th>Motivo</th></tr></thead>
+      <tbody>
+        ${records.map(r=>`<tr>
+          <td>${r.periods.map(p=>p.time).join(', ')}</td>
+          <td>${escapeHtml(r.periods.map(p=>p.course).join(', '))}</td>
+          <td>${escapeHtml(r.teacherAbsentName)}</td>
+          <td>${escapeHtml(r.subTeacherName)}${r.subIsPool?' <span class="badge pool">PAD/Otros</span>':''}</td>
+          <td>${escapeHtml(r.reason||'')}</td>
+        </tr>`).join('') || '<tr><td colspan="5" style="color:#999;">Sin registros.</td></tr>'}
+      </tbody>
+    </table>
+  `;
+}
+document.getElementById('btnDailyPrint').addEventListener('click', ()=>{
+  const date = document.getElementById('dailyRepDate').value;
+  if(!date){ toast('Selecciona una fecha'); return; }
+  renderDailyIntoMainReport(date);
+  window.print();
+});
+
+function utf8ToBase64(str){ return btoa(unescape(encodeURIComponent(str))); }
+function base64UrlEncode(str){
+  return btoa(unescape(encodeURIComponent(str))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function buildMimeMessage({to, cc, subject, bodyText}){
+  const encodedSubject = '=?UTF-8?B?' + utf8ToBase64(subject) + '?=';
+  const encodedBody = (utf8ToBase64(bodyText).match(/.{1,76}/g) || ['']).join('\r\n');
+  const lines = ['To: ' + to];
+  if(cc && cc.length) lines.push('Cc: ' + cc.join(', '));
+  lines.push('Subject: ' + encodedSubject);
+  lines.push('MIME-Version: 1.0');
+  lines.push('Content-Type: text/plain; charset="UTF-8"');
+  lines.push('Content-Transfer-Encoding: base64');
+  lines.push('');
+  lines.push(encodedBody);
+  return base64UrlEncode(lines.join('\r\n'));
+}
+async function sendGmail({to, cc, subject, bodyText}){
+  const raw = buildMimeMessage({to, cc, subject, bodyText});
+  const res = await gFetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+    method: 'POST', body: JSON.stringify({ raw })
+  });
+  if(!res.ok){
+    const errBody = await res.text();
+    throw new Error('Gmail API error ' + res.status + ': ' + errBody.slice(0,200));
+  }
+  return true;
+}
+
+async function sendDailyReports(){
+  const date = document.getElementById('dailyRepDate').value;
+  if(!date){ toast('Selecciona una fecha'); return; }
+  const { groups } = computeDailyGroups(date);
+  const statusEl = document.getElementById('dailySendStatus');
+  if(!groups.length){ statusEl.textContent = `No hay reemplazos registrados para el ${formatDateEs(date)}.`; return; }
+  const ccList = [
+    document.getElementById('dailyCc1').value,
+    document.getElementById('dailyCc2').value,
+    document.getElementById('dailyCc3').value
+  ].map(s=>s.trim()).filter(Boolean);
+
+  statusEl.textContent = 'Conectando con Gmail...';
+  try{
+    await requestGoogleToken();
+  }catch(err){
+    statusEl.textContent = 'No se pudo autenticar con Google: ' + (err && err.message ? err.message : 'intenta de nuevo.');
+    return;
+  }
+
+  let sent = 0, skipped = 0, failed = 0;
+  for(const g of groups){
+    const email = getEmailForSub(g.id, g.isPool);
+    if(!email){ skipped++; continue; }
+    const bodyLines = [
+      `Estimado(a) ${g.name},`, '',
+      `Le informamos el detalle de los reemplazos que realizó el ${formatDateEs(date)}:`, '',
+      ...g.items.map(r=> `• ${r.periods.map(p=>p.time).join(', ')} — Curso ${r.periods.map(p=>p.course).join(', ')} — en reemplazo de ${r.teacherAbsentName}${r.reason?(' ('+r.reason+')'):''}`),
+      '', `Total: ${g.hours} hora(s) pedagógica(s) de reemplazo.`, '',
+      'Saludos cordiales,', 'Coordinación Académica'
+    ];
+    try{
+      await sendGmail({ to: email, cc: ccList, subject: `Reporte de Reemplazo — ${formatDateEs(date)}`, bodyText: bodyLines.join('\n') });
+      sent++;
+    }catch(err){
+      console.warn('Error enviando a', email, err);
+      failed++;
+    }
+    statusEl.textContent = `Enviando... (${sent} enviado(s) hasta ahora)`;
+  }
+  statusEl.textContent = `Listo: ${sent} correo(s) enviado(s)` +
+    (skipped ? `, ${skipped} omitido(s) por falta de correo` : '') +
+    (failed ? `, ${failed} fallaron` : '') + '.';
+  toast('Envío de correos finalizado');
+}
+document.getElementById('btnDailySend').addEventListener('click', sendDailyReports);
 
 // ================= EXPORT / IMPORT / RESET =================
 document.getElementById('btnExport').addEventListener('click', ()=>{
