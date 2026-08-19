@@ -161,6 +161,7 @@
     main{padding:0; max-width:100%;}
     .panel{border:none; box-shadow:none; padding:0; margin-bottom:10px;}
     table{font-size:11px;}
+    .subject-table select{border:none; background:transparent; appearance:none; -webkit-appearance:none; padding:0; font-size:11px; color:inherit;}
   }
 </style>
 </head>
@@ -194,7 +195,7 @@
 
 <!-- TAB PROFESORES -->
 <section id="tab-profesores" class="tabpanel">
-  <div class="panel">
+  <div class="panel no-print">
     <h2>Buscar por profesor(a)</h2>
     <p class="helptext">Aquí también puedes crear profesores(as) con Horas PAD u otras personas disponibles para reemplazo que no están en el horario original: crea el/la profesor(a), asígnale su correo, y en la pestaña <b>Horas Adicionales</b> marca sus bloques como "Horas PAD" o "Emergencia" para que aparezcan como candidatos(as) en Reemplazos.</p>
     <div class="row">
@@ -213,7 +214,7 @@
 
 <!-- TAB CURSOS -->
 <section id="tab-cursos" class="tabpanel" style="display:none;">
-  <div class="panel">
+  <div class="panel no-print">
     <h2>Buscar por curso</h2>
     <div class="row">
       <div class="field" style="min-width:220px;">
@@ -1158,6 +1159,7 @@ function renderTeacherDetail(id){
       <div class="row" style="justify-content:space-between; align-items:center;">
         <h2 style="margin:0;">${escapeHtml(teacher.name)}</h2>
         <div class="no-print" style="display:flex; gap:6px;">
+          <button class="btn small" id="btnPrintTeacher">🖨 Imprimir horario</button>
           <button class="btn small" id="btnEditTeacherName">✏️ Editar nombre</button>
           <button class="btn small danger" id="btnDeleteTeacher">🗑️ Eliminar profesor(a)</button>
         </div>
@@ -1245,6 +1247,7 @@ function renderTeacherDetail(id){
     e.target.value = getTeacherRut(teacher.id);
     toast('RUT guardado');
   });
+  document.getElementById('btnPrintTeacher').addEventListener('click', ()=> window.print());
   document.getElementById('btnEditTeacherName').addEventListener('click', ()=>{
     const newName = prompt('Nuevo nombre para este profesor(a):', teacher.name);
     if(newName && newName.trim() && newName.trim()!==teacher.name){
@@ -1281,7 +1284,7 @@ function renderCourseDetail(course){
   if(!course){ wrap.innerHTML=''; return; }
   let maxRows = 0;
   DAYS.forEach(d=> maxRows = Math.max(maxRows, periodsForDay(d).length));
-  let html = `<div class="panel"><h2>Curso ${course}</h2><table class="grid"><thead><tr><th>Horario</th>`;
+  let html = `<div class="panel"><div class="row" style="justify-content:space-between; align-items:center;"><h2 style="margin:0;">Curso ${course}</h2><button class="btn small no-print" id="btnPrintCourse">🖨 Imprimir horario</button></div><table class="grid"><thead><tr><th>Horario</th>`;
   DAYS.forEach(d=> html += `<th>${d}</th>`);
   html += '</tr></thead><tbody>';
   for(let i=0;i<maxRows;i++){
@@ -1312,6 +1315,8 @@ function renderCourseDetail(course){
   }
   html += '</tbody></table></div>';
   wrap.innerHTML = html;
+  const printBtn = document.getElementById('btnPrintCourse');
+  if(printBtn) printBtn.addEventListener('click', ()=> window.print());
 }
 
 // ================= TAB HORAS ADICIONALES =================
