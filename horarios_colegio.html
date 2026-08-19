@@ -1527,9 +1527,11 @@ function renderRecentReplacements(){
 // ================= TAB REPORTES =================
 function initReportFilters(){
   const sel = document.getElementById('repFilterTeacher');
+  const current = sel.value; // preservar la selección: si no, se resetea cada vez que se filtra
   const allSubs = new Map();
   allTeachers().forEach(t=>allSubs.set(t.id, t.name));
   sel.innerHTML = '<option value="">Todos</option>' + [...allSubs.entries()].map(([id,name])=>`<option value="${id}">${name}</option>`).join('');
+  if(current) sel.value = current;
 }
 
 function formatDateEs(dateStr){
