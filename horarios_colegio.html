@@ -505,11 +505,12 @@ function stateToRows(){
     });
   });
 
-  const profesoresRows = [['profesorId','nombre','correo','personalizado','eliminado']];
+  const profesoresRows = [['profesorId','nombre','correo','rut','personalizado','eliminado']];
   const touchedIds = new Set([
     ...STATE.customTeachers.map(t=>t.id),
     ...Object.keys(STATE.teacherOverrides||{}),
     ...Object.keys(STATE.teacherEmails||{}),
+    ...Object.keys(STATE.teacherRuts||{}),
     ...(STATE.deletedTeachers||[])
   ]);
   touchedIds.forEach(tid=>{
@@ -517,9 +518,10 @@ function stateToRows(){
     const overrideName = STATE.teacherOverrides[tid] && STATE.teacherOverrides[tid].name;
     const name = custom ? custom.name : (overrideName || '');
     const email = STATE.teacherEmails[tid] || '';
+    const rut = STATE.teacherRuts[tid] || '';
     const isCustom = !!custom;
     const isDeleted = (STATE.deletedTeachers||[]).includes(tid);
-    profesoresRows.push([tid, name, email, String(isCustom), String(isDeleted)]);
+    profesoresRows.push([tid, name, email, rut, String(isCustom), String(isDeleted)]);
   });
 
   return { Reemplazos: reemplazosRows, Profesores: profesoresRows, HorasAdicionales: horasRows, Asignaturas: asigRows };
@@ -567,17 +569,20 @@ async function pullStateFromSheet(){
 
   (byTab.Profesores||[]).slice(1).forEach(row=>{
     if(!row[0]) return;
-    const tid = row[0], name = row[1]||'', email = row[2]||'', isCustom = row[3]==='true', isDeleted = row[4]==='true';
+    const tid = row[0], name = row[1]||'', email = row[2]||'', rut = row[3]||'', isCustom = row[4]==='true', isDeleted = row[5]==='true';
     if(isDeleted){
       if(!newState.deletedTeachers.includes(tid)) newState.deletedTeachers.push(tid);
     }
     if(isCustom && name){
-      newState.customTeachers.push({ id: tid, name, schedule: blankSchedule() });
+      newState.customTeachers.push({ id: tid, name, days: blankSchedule(), custom:true });
     } else if(name){
       newState.teacherOverrides[tid] = { name };
     }
     if(email){
       newState.teacherEmails[tid] = email;
+    }
+    if(rut){
+      newState.teacherRuts[tid] = normalizeRut(rut);
     }
   });
 
@@ -718,7 +723,7 @@ const ASIGNATURAS = [
 function defaultState(){
   return {
     version:3, extraHours:{}, subjects:{}, pool:[], replacements:[],
-    customTeachers:[], deletedTeachers:[], teacherOverrides:{}, teacherEmails:{}
+    customTeachers:[], deletedTeachers:[], teacherOverrides:{}, teacherEmails:{}, teacherRuts:{}
   };
 }
 
@@ -824,12 +829,36 @@ function deleteTeacher(id){
   }
   delete STATE.teacherOverrides[id];
   delete STATE.teacherEmails[id];
+  delete STATE.teacherRuts[id];
   saveState();
 }
 
 function getTeacherEmail(id){ return STATE.teacherEmails[id] || ''; }
 function setTeacherEmail(id, email){
   if(email) STATE.teacherEmails[id] = email; else delete STATE.teacherEmails[id];
+  saveState();
+}
+
+// ---------- RUT (evita profesores(as) duplicados(as)) ----------
+function normalizeRut(rut){
+  if(!rut) return '';
+  let clean = String(rut).toUpperCase().replace(/[^0-9K]/g, '');
+  if(!clean) return '';
+  const dv = clean.slice(-1);
+  let num = clean.slice(0, -1);
+  num = num.replace(/^0+/, '') || '0';
+  return num + '-' + dv;
+}
+function getTeacherRut(id){ return STATE.teacherRuts[id] || ''; }
+function findTeacherIdByRut(rut, excludeId){
+  const norm = normalizeRut(rut);
+  if(!norm) return null;
+  const found = Object.keys(STATE.teacherRuts).find(tid => tid!==excludeId && STATE.teacherRuts[tid]===norm);
+  return found || null;
+}
+function setTeacherRut(id, rut){
+  const norm = normalizeRut(rut);
+  if(norm) STATE.teacherRuts[id] = norm; else delete STATE.teacherRuts[id];
   saveState();
 }
 
@@ -927,7 +956,10 @@ teacherSearch.addEventListener('input', ()=>{
   const q = teacherSearch.value.trim().toLowerCase();
   if(!q){ teacherResults.classList.remove('show'); return; }
   const matches = allTeachers().filter(t=>t.name.toLowerCase().includes(q)).slice(0,30);
-  teacherResults.innerHTML = matches.map(t=>`<div data-id="${t.id}">${t.name}</div>`).join('') || '<div style="color:#999;">Sin resultados</div>';
+  teacherResults.innerHTML = matches.map(t=>{
+    const rut = getTeacherRut(t.id);
+    return `<div data-id="${t.id}">${escapeHtml(t.name)}${rut?` <span style="color:#999;">(${escapeHtml(rut)})</span>`:''}</div>`;
+  }).join('') || '<div style="color:#999;">Sin resultados</div>';
   teacherResults.classList.add('show');
 });
 teacherResults.addEventListener('click', (e)=>{
@@ -949,7 +981,21 @@ function selectTeacher(id){
 document.getElementById('btnNewTeacher').addEventListener('click', ()=>{
   const name = prompt('Nombre completo del nuevo profesor(a):');
   if(!name || !name.trim()) return;
+  const rut = prompt('RUT del nuevo profesor(a) (opcional, ayuda a evitar duplicados si ya existe):');
+  if(rut && rut.trim()){
+    const dupId = findTeacherIdByRut(rut);
+    if(dupId){
+      const existing = teacherById(dupId);
+      const existingName = existing ? existing.name : dupId;
+      alert(`Ya existe un profesor(a) con ese RUT: ${existingName}. Se abrirá su ficha en vez de crear un(a) profesor(a) duplicado(a).`);
+      teacherSearch.value = existingName;
+      renderHeaderSummary();
+      selectTeacher(dupId);
+      return;
+    }
+  }
   const id = createTeacher(name.trim());
+  if(rut && rut.trim()) setTeacherRut(id, rut.trim());
   teacherSearch.value = name.trim();
   renderHeaderSummary();
   initHorasSelect();
@@ -1050,6 +1096,10 @@ function renderTeacherDetail(id){
         </div>
       </div>
       <div class="row" style="margin-top:10px;">
+        <div class="field" style="min-width:200px;">
+          <label>RUT</label>
+          <input type="text" id="teacherRutInput" value="${escapeHtml(getTeacherRut(teacher.id))}" placeholder="12345678-9">
+        </div>
         <div class="field" style="min-width:280px;">
           <label>Correo electrónico</label>
           <input type="text" id="teacherEmailInput" value="${escapeHtml(getTeacherEmail(teacher.id))}" placeholder="nombre@correo.com">
@@ -1110,6 +1160,19 @@ function renderTeacherDetail(id){
   document.getElementById('teacherEmailInput').addEventListener('change', (e)=>{
     setTeacherEmail(teacher.id, e.target.value.trim());
     toast('Correo guardado');
+  });
+  document.getElementById('teacherRutInput').addEventListener('change', (e)=>{
+    const raw = e.target.value.trim();
+    if(raw){
+      const dupId = findTeacherIdByRut(raw, teacher.id);
+      if(dupId){
+        const dupName = teacherById(dupId) ? teacherById(dupId).name : dupId;
+        alert(`Este RUT ya está registrado en otro profesor(a): ${dupName}. Revisa si se trata de un duplicado antes de guardar.`);
+      }
+    }
+    setTeacherRut(teacher.id, raw);
+    e.target.value = getTeacherRut(teacher.id);
+    toast('RUT guardado');
   });
   document.getElementById('btnEditTeacherName').addEventListener('click', ()=>{
     const newName = prompt('Nuevo nombre para este profesor(a):', teacher.name);
