@@ -27,6 +27,7 @@
     --nlal:#ffe8cc; --nlal-b:#e67e22;
     --cra:#f0e6ff; --cra-b:#7c4dff;
     --fc:#e0ecff; --fc-b:#2f6fed;
+    --ctcc:#e0f7f5; --ctcc-b:#16a085;
     --emergencia:#ffe0e0; --emergencia-b:#d43d3d;
     --radius:10px;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -98,6 +99,7 @@
   td.cat-nlal{background:var(--nlal);}
   td.cat-cra{background:var(--cra);}
   td.cat-fc{background:var(--fc);}
+  td.cat-ctcc{background:var(--ctcc);}
   td.cat-emergencia{background:var(--emergencia);}
   .legend{display:flex; gap:10px; flex-wrap:wrap; font-size:11.5px; margin-top:8px; color:var(--ink-soft);}
   .legend span{display:inline-flex; align-items:center; gap:5px;}
@@ -227,7 +229,7 @@
 <section id="tab-horas" class="tabpanel" style="display:none;">
   <div class="panel">
     <h2>Horas adicionales por profesor(a)</h2>
-    <p class="helptext">Selecciona un profesor(a) y asigna una categoría a cada bloque horario que no tiene clases lectivas: NLP (Planificación), NL-AP (Atención de Apoderados), NL-AE (Atención de Estudiantes), HP (Horas PIE), CDP (Consejo de Profesores), CAT (Catequesis), PAS (Pastoral), ACP (Asesor Centro de Padres), ACE (Asesor Centro de Alumnos), JD (Jefe de Departamento), NL-AL (Almuerzo), CRA (Coordinación CRA), FC (Formación Ciudadana), Horas PAD u otra actividad. También puedes asignar el nombre de la asignatura impartida en cada curso.</p>
+    <p class="helptext">Selecciona un profesor(a) y asigna una categoría a cada bloque horario que no tiene clases lectivas: NLP (Planificación), NL-AP (Atención de Apoderados), NL-AE (Atención de Estudiantes), HP (Horas PIE), CDP (Consejo de Profesores), CAT (Catequesis), PAS (Pastoral), ACP (Asesor Centro de Padres), ACE (Asesor Centro de Alumnos), JD (Jefe de Departamento), NL-AL (Almuerzo), CRA (Coordinación CRA), FC (Formación Ciudadana), CTCC (Tacuco), Horas PAD u otra actividad. También puedes asignar el nombre de la asignatura impartida en cada curso.</p>
     <div class="row">
       <div class="field" style="min-width:320px;">
         <label>Profesor(a)</label>
@@ -718,6 +720,7 @@ const CATS = {
   'nlal': {label:'NL-AL', cls:'cat-nlal'},
   'cra': {label:'CRA', cls:'cat-cra'},
   'fc': {label:'FC', cls:'cat-fc'},
+  'ctcc': {label:'CTCC', cls:'cat-ctcc'},
   'atencionestudiantes': {label:'NL-AE', cls:'cat-atencionestudiantes'},
   'pad': {label:'Horas PAD', cls:'cat-pad'},
   'emergencia': {label:'Emergencia', cls:'cat-emergencia'},
@@ -962,7 +965,7 @@ function teacherTeachingSlots(teacher){
 }
 
 function teacherStats(teacher){
-  let lectivas=0; const cat={libre:0,apoderados:0,pie:0,cdp:0,cat:0,pastoral:0,acp:0,ace:0,jefedepto:0,nlal:0,cra:0,fc:0,atencionestudiantes:0,pad:0,emergencia:0,otro:0,sinasignar:0};
+  let lectivas=0; const cat={libre:0,apoderados:0,pie:0,cdp:0,cat:0,pastoral:0,acp:0,ace:0,jefedepto:0,nlal:0,cra:0,fc:0,ctcc:0,atencionestudiantes:0,pad:0,emergencia:0,otro:0,sinasignar:0};
   DAYS.forEach(day=>{
     ((teacher.days||{})[day]||[]).forEach(s=>{
       if(s.isBreak) return;
@@ -973,7 +976,7 @@ function teacherStats(teacher){
       }
     });
   });
-  const extraTotal = cat.libre+cat.apoderados+cat.pie+cat.cdp+cat.cat+cat.pastoral+cat.acp+cat.ace+cat.jefedepto+cat.nlal+cat.cra+cat.fc+cat.atencionestudiantes+cat.pad+cat.emergencia+cat.otro;
+  const extraTotal = cat.libre+cat.apoderados+cat.pie+cat.cdp+cat.cat+cat.pastoral+cat.acp+cat.ace+cat.jefedepto+cat.nlal+cat.cra+cat.fc+cat.ctcc+cat.atencionestudiantes+cat.pad+cat.emergencia+cat.otro;
   return {lectivas, cat, extraTotal, total: lectivas+extraTotal};
 }
 
@@ -1130,6 +1133,7 @@ function legendHtml(){
     <span><span class="swatch" style="background:var(--nlal)"></span>NL-AL – Almuerzo</span>
     <span><span class="swatch" style="background:var(--cra)"></span>CRA – Coordinación CRA</span>
     <span><span class="swatch" style="background:var(--fc)"></span>FC – Formación Ciudadana</span>
+    <span><span class="swatch" style="background:var(--ctcc)"></span>CTCC – Tacuco</span>
     <span><span class="swatch" style="background:var(--atencion)"></span>NL-AE – Atención de Estudiantes</span>
     <span><span class="swatch" style="background:var(--pad)"></span>Horas PAD</span>
     <span><span class="swatch" style="background:var(--emergencia)"></span>Emergencia</span>
@@ -1182,6 +1186,7 @@ function renderTeacherDetail(id){
         <div class="stat"><div class="num">${stats.cat.nlal}</div><div class="lbl">NL-AL (Almuerzo)</div></div>
         <div class="stat"><div class="num">${stats.cat.cra}</div><div class="lbl">CRA (Coord. CRA)</div></div>
         <div class="stat"><div class="num">${stats.cat.fc}</div><div class="lbl">FC (Formación Ciudadana)</div></div>
+        <div class="stat"><div class="num">${stats.cat.ctcc}</div><div class="lbl">CTCC (Tacuco)</div></div>
         <div class="stat"><div class="num">${stats.cat.atencionestudiantes}</div><div class="lbl">NL-AE (Atención de Estudiantes)</div></div>
         <div class="stat"><div class="num">${stats.cat.pad}</div><div class="lbl">Horas PAD</div></div>
         <div class="stat"><div class="num">${stats.cat.emergencia}</div><div class="lbl">Emergencia</div></div>
