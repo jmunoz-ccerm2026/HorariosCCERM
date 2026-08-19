@@ -125,6 +125,13 @@
 
   .list-item{display:flex; justify-content:space-between; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; margin-bottom:6px; background:#fafbfc; flex-wrap:wrap;}
   .list-item .meta{font-size:12px; color:var(--ink-soft);}
+  .rep-date-group{border:1px solid var(--line); border-radius:8px; margin-bottom:8px; overflow:hidden;}
+  .rep-date-group summary{cursor:pointer; padding:10px 12px; background:#f3f5f8; list-style:none; display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;}
+  .rep-date-group summary::-webkit-details-marker{display:none;}
+  .rep-date-group summary::before{content:'▸'; display:inline-block; margin-right:2px; transition:transform .15s;}
+  .rep-date-group[open] summary::before{transform:rotate(90deg);}
+  .rep-date-group summary .meta{font-size:12px; color:var(--ink-soft); font-weight:400;}
+  .rep-date-items{padding:8px 10px 2px;}
   .pool-item{flex-direction:column; align-items:stretch;}
   .pool-item .pool-head{display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;}
   .pool-avail-wrap{display:none; margin-top:10px; border-top:1px dashed var(--line); padding-top:10px;}
@@ -1511,17 +1518,36 @@ document.getElementById('btnRegisterRep').addEventListener('click', ()=>{
 
 function renderRecentReplacements(){
   const wrap = document.getElementById('repRecent');
-  const list = [...STATE.replacements].sort((a,b)=> b.createdAt.localeCompare(a.createdAt)).slice(0,25);
+  const list = [...STATE.replacements].sort((a,b)=> b.createdAt.localeCompare(a.createdAt)).slice(0,60);
   if(!list.length){ wrap.innerHTML = '<div class="empty-state">Aún no hay reemplazos registrados.</div>'; return; }
-  wrap.innerHTML = list.map(r=>`
-    <div class="list-item">
-      <div>
-        <b>${escapeHtml(r.subTeacherName)}</b> reemplazó a <b>${escapeHtml(r.teacherAbsentName)}</b>
-        <div class="meta">${r.date} (${r.day}) · ${r.periods.map(p=>p.time).join(', ')} · ${escapeHtml(r.periods.map(p=>p.course).join(', '))} ${r.reason?('· '+escapeHtml(r.reason)):''}</div>
+
+  // Agrupa por fecha, en grupos desplegables (el más reciente aparece primero y abierto).
+  const groups = new Map();
+  list.forEach(r=>{
+    if(!groups.has(r.date)) groups.set(r.date, { date:r.date, day:r.day, items:[], lastCreatedAt:r.createdAt });
+    const g = groups.get(r.date);
+    g.items.push(r);
+    if(r.createdAt > g.lastCreatedAt) g.lastCreatedAt = r.createdAt;
+  });
+  const groupList = [...groups.values()].sort((a,b)=> b.lastCreatedAt.localeCompare(a.lastCreatedAt));
+
+  wrap.innerHTML = groupList.map((g,idx)=>{
+    const totalHoras = g.items.reduce((s,r)=>s+r.periods.length,0);
+    return `
+    <details class="rep-date-group no-print" ${idx===0?'open':''}>
+      <summary><b>${escapeHtml(formatDateEs(g.date))}</b> <span class="meta">${g.items.length} reemplazo(s) · ${totalHoras} hora(s) pedagógica(s)</span></summary>
+      <div class="rep-date-items">
+        ${g.items.map(r=>`
+        <div class="list-item">
+          <div>
+            <b>${escapeHtml(r.subTeacherName)}</b> reemplazó a <b>${escapeHtml(r.teacherAbsentName)}</b>
+            <div class="meta">${r.periods.map(p=>p.time).join(', ')} · ${escapeHtml(r.periods.map(p=>p.course).join(', '))} ${r.reason?('· '+escapeHtml(r.reason)):''}</div>
+          </div>
+          <button class="btn small danger no-print" data-del="${r.id}">Eliminar</button>
+        </div>`).join('')}
       </div>
-      <button class="btn small danger no-print" data-del="${r.id}">Eliminar</button>
-    </div>
-  `).join('');
+    </details>`;
+  }).join('');
   wrap.querySelectorAll('[data-del]').forEach(b=>{
     b.addEventListener('click', ()=>{
       STATE.replacements = STATE.replacements.filter(r=>r.id!==b.dataset.del);
