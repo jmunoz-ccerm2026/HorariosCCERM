@@ -346,7 +346,7 @@
 const GOOGLE_CLIENT_ID = '930786063080-17c8i334uuuh4jb0okd4kj4fautjsqfm.apps.googleusercontent.com';
 const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/gmail.send';
 const SHEET_ID_KEY = 'colegio_horarios_sheet_id_v1';
-const SHEET_TABS = ['Reemplazos','HorasAdicionales','Asignaturas'];
+const SHEET_TABS = ['Reemplazos','Profesores','HorasAdicionales','Asignaturas'];
 
 let gTokenClient = null;
 let gAccessToken = null;
@@ -453,7 +453,24 @@ function stateToRows(){
     });
   });
 
-  return { Reemplazos: reemplazosRows, HorasAdicionales: horasRows, Asignaturas: asigRows };
+  const profesoresRows = [['profesorId','nombre','correo','personalizado','eliminado']];
+  const touchedIds = new Set([
+    ...STATE.customTeachers.map(t=>t.id),
+    ...Object.keys(STATE.teacherOverrides||{}),
+    ...Object.keys(STATE.teacherEmails||{}),
+    ...(STATE.deletedTeachers||[])
+  ]);
+  touchedIds.forEach(tid=>{
+    const custom = STATE.customTeachers.find(t=>t.id===tid);
+    const overrideName = STATE.teacherOverrides[tid] && STATE.teacherOverrides[tid].name;
+    const name = custom ? custom.name : (overrideName || '');
+    const email = STATE.teacherEmails[tid] || '';
+    const isCustom = !!custom;
+    const isDeleted = (STATE.deletedTeachers||[]).includes(tid);
+    profesoresRows.push([tid, name, email, String(isCustom), String(isDeleted)]);
+  });
+
+  return { Reemplazos: reemplazosRows, Profesores: profesoresRows, HorasAdicionales: horasRows, Asignaturas: asigRows };
 }
 
 async function pushStateToSheet(){
@@ -494,6 +511,22 @@ async function pullStateFromSheet(){
       subTeacherId: row[5], subTeacherName: row[6], subIsPool: row[7]==='true', reason: row[8]||'',
       periods, createdAt: row[10]||''
     });
+  });
+
+  (byTab.Profesores||[]).slice(1).forEach(row=>{
+    if(!row[0]) return;
+    const tid = row[0], name = row[1]||'', email = row[2]||'', isCustom = row[3]==='true', isDeleted = row[4]==='true';
+    if(isDeleted){
+      if(!newState.deletedTeachers.includes(tid)) newState.deletedTeachers.push(tid);
+    }
+    if(isCustom && name){
+      newState.customTeachers.push({ id: tid, name, schedule: blankSchedule() });
+    } else if(name){
+      newState.teacherOverrides[tid] = { name };
+    }
+    if(email){
+      newState.teacherEmails[tid] = email;
+    }
   });
 
   (byTab.HorasAdicionales||[]).slice(1).forEach(row=>{
