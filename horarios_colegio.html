@@ -109,6 +109,10 @@
   .stat{border:1px solid var(--line); border-radius:8px; padding:10px 12px; background:#fafbfc;}
   .stat .num{font-size:20px; font-weight:800;}
   .stat .lbl{font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em;}
+  .summary-grid.compact{grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:6px;}
+  .summary-grid.compact .stat{padding:5px 8px;}
+  .summary-grid.compact .stat .num{font-size:14px;}
+  .summary-grid.compact .stat .lbl{font-size:9px;}
 
   .subject-table td, .subject-table th{padding:6px 8px; border-bottom:1px solid var(--line); text-align:left; font-size:13px;}
   .subject-table input[type=text]{width:100%;}
@@ -162,6 +166,7 @@
     .panel{border:none; box-shadow:none; padding:0; margin-bottom:10px;}
     table{font-size:11px;}
     .subject-table select{border:none; background:transparent; appearance:none; -webkit-appearance:none; padding:0; font-size:11px; color:inherit;}
+    .print-page-break{page-break-before:always; break-before:page;}
   }
 </style>
 </head>
@@ -1174,7 +1179,11 @@ function renderTeacherDetail(id){
           <input type="text" id="teacherEmailInput" value="${escapeHtml(getTeacherEmail(teacher.id))}" placeholder="nombre@correo.com">
         </div>
       </div>
-      <div class="summary-grid">
+      <h3>Horario semanal</h3>
+      ${renderScheduleGrid(teacher)}
+      ${legendHtml()}
+      <h3 style="margin-top:16px;">Resumen de horas</h3>
+      <div class="summary-grid compact">
         <div class="stat"><div class="num">${stats.lectivas}</div><div class="lbl">Horas lectivas</div></div>
         <div class="stat"><div class="num">${stats.cat.libre}</div><div class="lbl">NLP (Planificación)</div></div>
         <div class="stat"><div class="num">${stats.cat.apoderados}</div><div class="lbl">NL-AP (Atención apoderados)</div></div>
@@ -1197,10 +1206,7 @@ function renderTeacherDetail(id){
         <div class="stat"><div class="num">${repHoras}</div><div class="lbl">Horas de reemplazo realizadas</div></div>
       </div>
       <p class="helptext" style="margin-top:8px;">Las horas "sin asignar" (${stats.cat.sinasignar}) corresponden a bloques vacíos en el horario que aún no han sido categorizados. Ve a la pestaña <b>Horas Adicionales</b> para asignarlas.</p>
-      <h3>Horario semanal</h3>
-      ${renderScheduleGrid(teacher)}
-      ${legendHtml()}
-      <h3>Asignaturas impartidas</h3>
+      <h3 class="print-page-break">Asignaturas impartidas</h3>
       <p class="helptext" style="margin-top:-4px;">Se asigna una asignatura por cada hora de clases, así puedes diferenciar cuando un(a) profesor(a) dicta más de una asignatura en el mismo curso.</p>
       <table class="subject-table">
         <thead><tr><th>Día</th><th>Hora</th><th>Curso</th><th>Asignatura</th></tr></thead>
