@@ -1411,9 +1411,19 @@ function candidatesFor(day, time, excludeTeacherId){
     const cat = getExtra(t.id, day, time);
     const catKey = cat || 'libre';
     const free = !cat || cat==='libre';
-    list.push({id:t.id, name:t.name, isPool:false, free, catKey, catLabel: cat ? CATS[cat].label : 'NLP', isPad: catKey==='pad'});
+    // total de Horas PAD que tiene en su horario semanal, para poder ordenar de mayor a menor
+    // dentro del grupo de candidatos(as) con Horas PAD.
+    const padTotal = catKey==='pad' ? teacherStats(t).cat.pad : 0;
+    list.push({id:t.id, name:t.name, isPool:false, free, catKey, catLabel: cat ? CATS[cat].label : 'NLP', isPad: catKey==='pad', padTotal});
   });
-  list.sort((a,b)=> candidatePriority(a.catKey)-candidatePriority(b.catKey) || a.name.localeCompare(b.name));
+  list.sort((a,b)=>{
+    const byPriority = candidatePriority(a.catKey)-candidatePriority(b.catKey);
+    if(byPriority!==0) return byPriority;
+    if(a.catKey==='pad' && b.catKey==='pad'){
+      return (b.padTotal - a.padTotal) || a.name.localeCompare(b.name);
+    }
+    return a.name.localeCompare(b.name);
+  });
   return list;
 }
 
@@ -1444,7 +1454,7 @@ function renderRepPeriods(){
       <div class="pcourse">${s.courses.join(', ')}</div>
       <select class="repSub">
         <option value="">Selecciona reemplazante...</option>
-        ${cands.map(c=>`<option value="${c.id}" data-pool="${c.isPool}">${c.name} ${c.free?'✓ disponible':'⚠ '+c.catLabel}${c.isPad?' [PAD]':''}${c.free && c.isPool && !c.isPad ? ' — '+c.catLabel : ''}</option>`).join('')}
+        ${cands.map(c=>`<option value="${c.id}" data-pool="${c.isPool}">${c.name} ${c.free?'✓ disponible':'⚠ '+c.catLabel}${c.isPad?` [PAD · ${c.padTotal}h/sem]`:''}${c.free && c.isPool && !c.isPad ? ' — '+c.catLabel : ''}</option>`).join('')}
       </select>
     `;
     repPeriodsWrap.appendChild(row);
