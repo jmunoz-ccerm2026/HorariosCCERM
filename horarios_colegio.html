@@ -421,8 +421,12 @@ async function autoConnectIfPossible(){
     setSyncStatus('Reconectando a Google Sheets automáticamente...', false);
     await withTimeout(requestGoogleToken({silent:true}), 8000, 'La sesión de Google no respondió (posiblemente bloqueada por el navegador)');
     await ensureTabsExist(gSpreadsheetId);
-    await pullStateFromSheet();
-    refreshAll();
+    // NOTA: a diferencia del botón "Reconectar" (que pregunta si prefieres los datos
+    // de la planilla o los de este navegador), la reconexión automática en segundo
+    // plano NUNCA sobreescribe datos en ninguna dirección — solo restaura la sesión
+    // para que los próximos cambios se sigan guardando en la planilla. Si quieres
+    // traer los datos más recientes de la planilla (por ejemplo, hechos desde otro
+    // computador), usa el botón "Reconectar Google Sheets" manualmente.
     document.getElementById('btnGoogleConnect').textContent = '🔄 Reconectar Google Sheets';
     const openBtn = document.getElementById('btnOpenSheet');
     openBtn.style.display = 'inline-flex';
