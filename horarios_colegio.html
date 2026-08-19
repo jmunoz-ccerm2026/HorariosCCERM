@@ -1722,10 +1722,27 @@ async function sendGmail({to, cc, subject, bodyText}){
   return true;
 }
 
+// Cuerpo en texto plano con el reporte COMPLETO del día: todos los reemplazos, agrupados
+// por profesor(a) reemplazante, con el total general. Se usa para el correo consolidado
+// que reciben los destinatarios en copia (CC).
+function buildFullDayReportBody(date, groups, records){
+  const totalHoras = groups.reduce((s,g)=>s+g.hours,0);
+  const lines = [
+    `Reporte de Reemplazos — ${formatDateEs(date)}`, '',
+    'Resumen por profesor(a) reemplazante:',
+    ...groups.map(g=> `• ${g.name}${g.isPool?' (PAD/Otros)':''} — ${g.hours} hora(s) pedagógica(s)`),
+    '', `Total del día: ${totalHoras} hora(s) pedagógica(s) de reemplazo.`, '',
+    'Detalle completo:',
+    ...records.map(r=> `• ${r.periods.map(p=>p.time).join(', ')} — Curso ${r.periods.map(p=>p.course).join(', ')} — ${r.teacherAbsentName} reemplazado(a) por ${r.subTeacherName}${r.reason?(' ('+r.reason+')'):''}`),
+    '', 'Saludos cordiales,', 'Coordinación Académica'
+  ];
+  return lines.join('\n');
+}
+
 async function sendDailyReports(){
   const date = document.getElementById('dailyRepDate').value;
   if(!date){ toast('Selecciona una fecha'); return; }
-  const { groups } = computeDailyGroups(date);
+  const { groups, records } = computeDailyGroups(date);
   const statusEl = document.getElementById('dailySendStatus');
   if(!groups.length){ statusEl.textContent = `No hay reemplazos registrados para el ${formatDateEs(date)}.`; return; }
   const ccList = [
@@ -1747,24 +1764,20 @@ async function sendDailyReports(){
     return;
   }
 
+  // 1) A cada reemplazante se le envía SOLO el detalle de sus propios reemplazos del día.
   let sent = 0, skipped = 0, failed = 0;
   for(const g of groups){
     const email = getEmailForSub(g.id);
-    // Si el reemplazante no tiene correo propio, se envía igual usando las copias como destinatario principal
-    // (para que el reporte no se pierda), avisando en el cuerpo que falta registrar su correo.
-    const to = email || ccList[0];
-    const cc = email ? ccList : ccList.slice(1);
-    if(!to){ skipped++; continue; }
+    if(!email){ skipped++; continue; }
     const bodyLines = [
       `Estimado(a) ${g.name},`, '',
       `Le informamos el detalle de los reemplazos que realizó el ${formatDateEs(date)}:`, '',
       ...g.items.map(r=> `• ${r.periods.map(p=>p.time).join(', ')} — Curso ${r.periods.map(p=>p.course).join(', ')} — en reemplazo de ${r.teacherAbsentName}${r.reason?(' ('+r.reason+')'):''}`),
       '', `Total: ${g.hours} hora(s) pedagógica(s) de reemplazo.`, '',
-      ...(email? [] : ['(Nota: este/a profesor(a) no tiene un correo registrado en la app; este mensaje se envió solo a los destinatarios en copia.)', '']),
       'Saludos cordiales,', 'Coordinación Académica'
     ];
     try{
-      await sendGmail({ to, cc, subject: `Reporte de Reemplazo — ${g.name} — ${formatDateEs(date)}`, bodyText: bodyLines.join('\n') });
+      await sendGmail({ to: email, subject: `Reporte de Reemplazo — ${g.name} — ${formatDateEs(date)}`, bodyText: bodyLines.join('\n') });
       sent++;
     }catch(err){
       console.warn('Error enviando para', g.name, err);
@@ -1772,9 +1785,32 @@ async function sendDailyReports(){
     }
     statusEl.textContent = `Enviando... (${sent} enviado(s) hasta ahora)`;
   }
-  statusEl.textContent = `Listo: ${sent} correo(s) enviado(s)` +
-    (skipped ? `, ${skipped} omitido(s) por falta de correo y de copias` : '') +
-    (failed ? `, ${failed} fallaron` : '') + '.';
+
+  // 2) A los destinatarios en copia se les envía UN solo correo con el reporte COMPLETO
+  // del día (todos los reemplazos de todos los reemplazantes), no una copia parcial de
+  // cada correo individual.
+  let ccSent = false, ccFailed = false;
+  if(ccList.length){
+    statusEl.textContent = 'Enviando reporte consolidado a las copias...';
+    try{
+      await sendGmail({
+        to: ccList[0],
+        cc: ccList.slice(1),
+        subject: `Reporte de Reemplazos del día — ${formatDateEs(date)}`,
+        bodyText: buildFullDayReportBody(date, groups, records)
+      });
+      ccSent = true;
+    }catch(err){
+      console.warn('Error enviando reporte consolidado a copias', err);
+      ccFailed = true;
+    }
+  }
+
+  statusEl.textContent = `Listo: ${sent} correo(s) individual(es) enviado(s)` +
+    (skipped ? `, ${skipped} omitido(s) por falta de correo` : '') +
+    (failed ? `, ${failed} fallaron` : '') +
+    (ccSent ? '. Reporte completo del día enviado a las copias' : '') +
+    (ccFailed ? '. Falló el envío del reporte completo a las copias' : '') + '.';
   toast('Envío de correos finalizado');
 }
 document.getElementById('btnDailySend').addEventListener('click', sendDailyReports);
