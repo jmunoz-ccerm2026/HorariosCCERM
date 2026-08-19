@@ -601,7 +601,7 @@ async function pullStateFromSheet(){
     newState.subjects[tid][course] = subj;
   });
 
-  STATE = migratePoolIntoTeachers(newState);
+  STATE = repairCustomTeachers(migratePoolIntoTeachers(newState));
   saveState(); // refresh local cache too
   return true;
 }
@@ -730,6 +730,18 @@ function defaultState(){
 let STATE = loadState();
 saveState(); // persist immediately in case loadState() just migrated old data (e.g. Profesores PAD/Otros → Profesores)
 
+// Repara customTeachers que hayan quedado sin la propiedad "days" (por ejemplo, por una
+// versión anterior de la sincronización con Google Sheets que guardaba "schedule" en vez
+// de "days"). Un solo profesor(a) mal formado ahí rompía TODA la pantalla de Reemplazos,
+// ya que candidatesFor() recorre a todos los profesores(as) sin excepción.
+function repairCustomTeachers(state){
+  state.customTeachers = (state.customTeachers||[]).map(t=>{
+    if(t && t.days && typeof t.days === 'object') return t;
+    return Object.assign({}, t, { days: blankSchedule() });
+  });
+  return state;
+}
+
 function loadState(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -738,7 +750,7 @@ function loadState(){
       const merged = Object.assign(defaultState(), parsed);
       // migrate pool entries to have availability object + email field
       merged.pool = (merged.pool||[]).map(p=> Object.assign({availability:{}, email:''}, p));
-      return migratePoolIntoTeachers(merged);
+      return repairCustomTeachers(migratePoolIntoTeachers(merged));
     }
   }catch(e){ console.warn('No se pudo leer almacenamiento local', e); }
   return defaultState();
@@ -908,7 +920,7 @@ function teacherCoursesTaught(teacher){
 function teacherStats(teacher){
   let lectivas=0; const cat={libre:0,apoderados:0,pie:0,cdp:0,cat:0,pastoral:0,acp:0,ace:0,jefedepto:0,nlal:0,cra:0,fc:0,atencionestudiantes:0,pad:0,emergencia:0,otro:0,sinasignar:0};
   DAYS.forEach(day=>{
-    (teacher.days[day]||[]).forEach(s=>{
+    ((teacher.days||{})[day]||[]).forEach(s=>{
       if(s.isBreak) return;
       if(s.courses && s.courses.length){ lectivas++; }
       else {
@@ -1025,7 +1037,7 @@ function renderScheduleGrid(teacher, opts){
     DAYS.forEach(day=>{
       const p = periodsForDay(day)[i];
       if(!p){ html += '<td></td>'; return; }
-      const slot = (teacher.days[day]||[])[i];
+      const slot = ((teacher.days||{})[day]||[])[i];
       if(p.isBreak){ html += '<td class="break">Recreo</td>'; return; }
       if(slot && slot.courses && slot.courses.length){
         const subjHtml = slot.courses.map(c=>{
@@ -1222,7 +1234,7 @@ function renderCourseDetail(course){
       if(!p){ html += '<td></td>'; return; }
       if(p.isBreak){ html += '<td class="break">Recreo</td>'; return; }
       const teachersHere = allTeachers().filter(t=>{
-        const slot = (t.days[day]||[])[i];
+        const slot = ((t.days||{})[day]||[])[i];
         return slot && slot.courses && slot.courses.includes(course);
       });
       if(teachersHere.length){
@@ -1302,7 +1314,7 @@ function isTeacherBusyAt(teacherId, day, time, excludeReplacementId){
   // busy if teaching, or already assigned as substitute at same day/time in another record
   const t = teacherById(teacherId);
   if(t){
-    const slot = (t.days[day]||[]).find(s=>s.time===time);
+    const slot = ((t.days||{})[day]||[]).find(s=>s.time===time);
     if(slot && slot.courses && slot.courses.length) return {busy:true, reason:'Dicta clases'};
   }
   const clash = STATE.replacements.find(r=> r.id!==excludeReplacementId && !r.subIsPool && r.subTeacherId===teacherId && r.day===day && r.periods.some(p=>p.time===time) );
@@ -1321,7 +1333,7 @@ function candidatesFor(day, time, excludeTeacherId){
   const list = [];
   allTeachers().forEach(t=>{
     if(t.id===excludeTeacherId) return;
-    const slot = (t.days[day]||[]).find(s=>s.time===time);
+    const slot = ((t.days||{})[day]||[]).find(s=>s.time===time);
     if(!slot || slot.isBreak) return;
     if(slot.courses && slot.courses.length) return; // teaching, not available
     const busyCheck = isTeacherBusyAt(t.id, day, time);
@@ -1345,7 +1357,7 @@ function renderRepPeriods(){
   }
   const teacher = teacherById(teacherId);
   repDayInfo.textContent = `Día: ${day}. Marca los bloques a cubrir y elige un(a) reemplazante para cada uno.`;
-  const daySlots = (teacher.days[day]||[]).filter(s=>!s.isBreak && s.courses && s.courses.length);
+  const daySlots = ((teacher.days||{})[day]||[]).filter(s=>!s.isBreak && s.courses && s.courses.length);
   if(!daySlots.length){
     repPeriodsWrap.innerHTML = '<div class="empty-state">Este profesor(a) no tiene horas lectivas ese día.</div>';
     return;
@@ -1707,7 +1719,7 @@ document.getElementById('fileImport').addEventListener('change', (e)=>{
       const parsed = JSON.parse(reader.result);
       STATE = Object.assign(defaultState(), parsed);
       STATE.pool = (STATE.pool||[]).map(p=> Object.assign({availability:{}, email:''}, p));
-      STATE = migratePoolIntoTeachers(STATE);
+      STATE = repairCustomTeachers(migratePoolIntoTeachers(STATE));
       saveState();
       toast('Datos importados correctamente');
       refreshAll();
