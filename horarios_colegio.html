@@ -993,7 +993,14 @@ document.querySelectorAll('nav.tabs button').forEach(btn=>{
     btn.classList.add('active');
     document.querySelectorAll('.tabpanel').forEach(p=>p.style.display='none');
     document.getElementById('tab-'+btn.dataset.tab).style.display='block';
+    // Cada pestaña puede quedar con datos desactualizados si se editó algo en otra pestaña
+    // mientras tanto (por ejemplo, cargar Horas Adicionales y volver a Profesores sin volver
+    // a buscar al profesor(a)). Se refresca con los datos más recientes cada vez que se entra.
     if(btn.dataset.tab==='reportes') renderReport();
+    if(btn.dataset.tab==='profesores' && currentTeacherId) renderTeacherDetail(currentTeacherId);
+    if(btn.dataset.tab==='cursos' && courseSelect.value) renderCourseDetail(courseSelect.value);
+    if(btn.dataset.tab==='horas' && horasTeacherSelect.value) renderHorasDetail(horasTeacherSelect.value);
+    if(btn.dataset.tab==='reemplazos'){ renderRepPeriods(); renderRecentReplacements(); }
   });
 });
 
