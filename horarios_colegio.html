@@ -496,12 +496,27 @@ function stateToRows(){
     });
   });
 
-  const asigRows = [['profesorId','profesorNombre','curso','asignatura']];
+  const asigRows = [['profesorId','profesorNombre','dia','hora','curso','asignatura']];
+  // legado: asignaturas guardadas antes de poder diferenciar por hora (una por curso)
   Object.keys(STATE.subjects||{}).forEach(tid=>{
     const t = teacherById(tid);
     const byCourse = STATE.subjects[tid]||{};
     Object.keys(byCourse).forEach(course=>{
-      asigRows.push([tid, t?t.name:tid, course, byCourse[course]]);
+      asigRows.push([tid, t?t.name:tid, '', '', course, byCourse[course]]);
+    });
+  });
+  // asignaturas por hora específica (día + bloque + curso)
+  Object.keys(STATE.subjectsBySlot||{}).forEach(tid=>{
+    const t = teacherById(tid);
+    const byDay = STATE.subjectsBySlot[tid]||{};
+    Object.keys(byDay).forEach(day=>{
+      const byTime = byDay[day]||{};
+      Object.keys(byTime).forEach(time=>{
+        const byCourse = byTime[time]||{};
+        Object.keys(byCourse).forEach(course=>{
+          asigRows.push([tid, t?t.name:tid, day, time, course, byCourse[course]]);
+        });
+      });
     });
   });
 
@@ -596,9 +611,17 @@ async function pullStateFromSheet(){
 
   (byTab.Asignaturas||[]).slice(1).forEach(row=>{
     if(!row[0]) return;
-    const tid=row[0], course=row[2], subj=row[3];
-    newState.subjects[tid] = newState.subjects[tid] || {};
-    newState.subjects[tid][course] = subj;
+    const tid=row[0], day=row[2]||'', time=row[3]||'', course=row[4], subj=row[5];
+    if(day && time){
+      newState.subjectsBySlot[tid] = newState.subjectsBySlot[tid] || {};
+      newState.subjectsBySlot[tid][day] = newState.subjectsBySlot[tid][day] || {};
+      newState.subjectsBySlot[tid][day][time] = newState.subjectsBySlot[tid][day][time] || {};
+      newState.subjectsBySlot[tid][day][time][course] = subj;
+    } else {
+      // fila de formato antiguo (sin día/hora): asignatura por curso completo
+      newState.subjects[tid] = newState.subjects[tid] || {};
+      newState.subjects[tid][course] = subj;
+    }
   });
 
   STATE = repairCustomTeachers(migratePoolIntoTeachers(newState));
@@ -722,7 +745,7 @@ const ASIGNATURAS = [
 
 function defaultState(){
   return {
-    version:3, extraHours:{}, subjects:{}, pool:[], replacements:[],
+    version:3, extraHours:{}, subjects:{}, subjectsBySlot:{}, pool:[], replacements:[],
     customTeachers:[], deletedTeachers:[], teacherOverrides:{}, teacherEmails:{}, teacherRuts:{}
   };
 }
@@ -901,13 +924,21 @@ function setExtra(teacherId, day, time, cat){
   saveState();
 }
 
-function getSubject(teacherId, course){
+// La asignatura se guarda por hora específica (profesor + día + bloque + curso), ya que un(a)
+// mismo(a) profesor(a) puede dictar más de una asignatura en el mismo curso en distintos bloques.
+// Si no hay un valor guardado para esa hora puntual, se usa como respaldo el valor "por curso"
+// guardado antes de que existiera esta distinción (compatibilidad con datos antiguos).
+function getSubject(teacherId, day, time, course){
+  const bySlot = STATE.subjectsBySlot[teacherId] && STATE.subjectsBySlot[teacherId][day] && STATE.subjectsBySlot[teacherId][day][time];
+  if(bySlot && bySlot[course]) return bySlot[course];
   return (STATE.subjects[teacherId] && STATE.subjects[teacherId][course]) || '';
 }
-function setSubject(teacherId, course, name){
-  STATE.subjects[teacherId] = STATE.subjects[teacherId] || {};
-  if(name) STATE.subjects[teacherId][course] = name;
-  else delete STATE.subjects[teacherId][course];
+function setSubject(teacherId, day, time, course, name){
+  STATE.subjectsBySlot[teacherId] = STATE.subjectsBySlot[teacherId] || {};
+  STATE.subjectsBySlot[teacherId][day] = STATE.subjectsBySlot[teacherId][day] || {};
+  STATE.subjectsBySlot[teacherId][day][time] = STATE.subjectsBySlot[teacherId][day][time] || {};
+  if(name) STATE.subjectsBySlot[teacherId][day][time][course] = name;
+  else delete STATE.subjectsBySlot[teacherId][day][time][course];
   saveState();
 }
 
@@ -915,6 +946,19 @@ function teacherCoursesTaught(teacher){
   const set = new Set();
   DAYS.forEach(d=> (teacher.days[d]||[]).forEach(s=> (s.courses||[]).forEach(c=>set.add(c))));
   return sortCourses([...set]);
+}
+
+// Cada bloque lectivo del horario, individualmente (día + hora + curso), para poder asignar
+// una asignatura distinta por hora en vez de una sola por curso.
+function teacherTeachingSlots(teacher){
+  const rows = [];
+  DAYS.forEach(day=>{
+    ((teacher.days||{})[day]||[]).forEach(s=>{
+      if(s.isBreak) return;
+      (s.courses||[]).forEach(c=> rows.push({day, time:s.time, course:c}));
+    });
+  });
+  return rows;
 }
 
 function teacherStats(teacher){
@@ -1041,7 +1085,7 @@ function renderScheduleGrid(teacher, opts){
       if(p.isBreak){ html += '<td class="break">Recreo</td>'; return; }
       if(slot && slot.courses && slot.courses.length){
         const subjHtml = slot.courses.map(c=>{
-          const subj = getSubject(teacher.id, c);
+          const subj = getSubject(teacher.id, day, p.time, c);
           return subj ? `${c} <span class="cell-subject">(${escapeHtml(subj)})</span>` : c;
         }).join('<br>');
         html += `<td><div class="cell-course">${subjHtml}</div></td>`;
@@ -1143,28 +1187,31 @@ function renderTeacherDetail(id){
       ${renderScheduleGrid(teacher)}
       ${legendHtml()}
       <h3>Asignaturas impartidas</h3>
+      <p class="helptext" style="margin-top:-4px;">Se asigna una asignatura por cada hora de clases, así puedes diferenciar cuando un(a) profesor(a) dicta más de una asignatura en el mismo curso.</p>
       <table class="subject-table">
-        <thead><tr><th>Curso</th><th>Asignatura</th></tr></thead>
+        <thead><tr><th>Día</th><th>Hora</th><th>Curso</th><th>Asignatura</th></tr></thead>
         <tbody>
-        ${teacherCoursesTaught(teacher).map(c=>{
-          const current = getSubject(teacher.id, c);
+        ${teacherTeachingSlots(teacher).map(({day,time,course})=>{
+          const current = getSubject(teacher.id, day, time, course);
           const customExtra = (current && !ASIGNATURAS.includes(current)) ? `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)}</option>` : '';
           return `
           <tr>
-            <td>${c}</td>
-            <td><select data-course="${c}" class="subjInput">
+            <td>${day}</td>
+            <td>${time.replace('-',' – ')}</td>
+            <td>${course}</td>
+            <td><select data-day="${day}" data-time="${time}" data-course="${course}" class="subjInput">
               <option value="">Sin asignar</option>
               ${customExtra}
               ${ASIGNATURAS.map(a=>`<option value="${escapeHtml(a)}" ${a===current?'selected':''}>${escapeHtml(a)}</option>`).join('')}
             </select></td>
-          </tr>`;}).join('') || '<tr><td colspan="2" style="color:#999;">Este profesor(a) no tiene cursos asignados en el horario.</td></tr>'}
+          </tr>`;}).join('') || '<tr><td colspan="4" style="color:#999;">Este profesor(a) no tiene cursos asignados en el horario.</td></tr>'}
         </tbody>
       </table>
     </div>
   `;
   wrap.querySelectorAll('.subjInput').forEach(inp=>{
     inp.addEventListener('change', ()=>{
-      setSubject(teacher.id, inp.dataset.course, inp.value);
+      setSubject(teacher.id, inp.dataset.day, inp.dataset.time, inp.dataset.course, inp.value);
       toast('Asignatura guardada');
       renderTeacherDetail(id); // refresh grid labels
     });
@@ -1239,7 +1286,7 @@ function renderCourseDetail(course){
       });
       if(teachersHere.length){
         html += `<td>${teachersHere.map(t=>{
-          const subj = getSubject(t.id, course);
+          const subj = getSubject(t.id, day, p.time, course);
           const subjLine = subj
             ? `<div class="cell-course" style="font-size:12px;">${escapeHtml(subj)}</div>`
             : `<div class="cell-course" style="font-size:11px; color:var(--warn);">Sin asignatura definida</div>`;
