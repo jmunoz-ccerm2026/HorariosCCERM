@@ -185,7 +185,6 @@
   <button data-tab="cursos">Cursos</button>
   <button data-tab="horas">Horas Adicionales</button>
   <button data-tab="reemplazos">Reemplazos</button>
-  <button data-tab="pool">Profesores PAD/Otros</button>
   <button data-tab="reportes">Reportes</button>
 </nav>
 
@@ -195,6 +194,7 @@
 <section id="tab-profesores" class="tabpanel">
   <div class="panel">
     <h2>Buscar por profesor(a)</h2>
+    <p class="helptext">Aquí también puedes crear profesores(as) con Horas PAD u otras personas disponibles para reemplazo que no están en el horario original: crea el/la profesor(a), asígnale su correo, y en la pestaña <b>Horas Adicionales</b> marca sus bloques como "Horas PAD" o "Emergencia" para que aparezcan como candidatos(as) en Reemplazos.</p>
     <div class="row">
       <div class="field" style="min-width:320px;">
         <label>Nombre del profesor(a)</label>
@@ -268,36 +268,6 @@
   </div>
 </section>
 
-<!-- TAB POOL -->
-<section id="tab-pool" class="tabpanel" style="display:none;">
-  <div class="panel">
-    <h2>Profesores PAD/Otros disponibles para reemplazo</h2>
-    <p class="helptext">Agrega personas que no están en el horario base (por ejemplo, docentes con Horas PAD, reemplazantes externos o de emergencia). Puedes dejarlas disponibles para cualquier horario, o definir un horario de disponibilidad específico -marcando cada bloque como <b>Horas PAD</b> o <b>Emergencia</b>- para que solo aparezcan como candidatas en esos momentos.</p>
-    <div class="row">
-      <div class="field">
-        <label>Nombre</label>
-        <input type="text" id="poolName" placeholder="Nombre completo">
-      </div>
-      <div class="field">
-        <label>Correo electrónico (opcional)</label>
-        <input type="text" id="poolEmail" placeholder="nombre@correo.com">
-      </div>
-      <div class="field">
-        <label>Nota / especialidad (opcional)</label>
-        <input type="text" id="poolNote" placeholder="Ej: Educación Física">
-      </div>
-      <div class="field" style="max-width:190px;">
-        <label>Horas contratadas / semana (opcional)</label>
-        <input type="number" id="poolHours" min="0" step="1">
-      </div>
-      <button class="btn primary" id="btnAddPool">+ Agregar</button>
-    </div>
-  </div>
-  <div class="panel">
-    <h2>Listado</h2>
-    <div id="poolList"></div>
-  </div>
-</section>
 
 <!-- TAB REPORTES -->
 <section id="tab-reportes" class="tabpanel" style="display:none;">
@@ -376,7 +346,7 @@
 const GOOGLE_CLIENT_ID = '930786063080-17c8i334uuuh4jb0okd4kj4fautjsqfm.apps.googleusercontent.com';
 const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/gmail.send';
 const SHEET_ID_KEY = 'colegio_horarios_sheet_id_v1';
-const SHEET_TABS = ['Reemplazos','Pool','HorasAdicionales','Asignaturas'];
+const SHEET_TABS = ['Reemplazos','HorasAdicionales','Asignaturas'];
 
 let gTokenClient = null;
 let gAccessToken = null;
@@ -462,11 +432,6 @@ function stateToRows(){
     reemplazosRows.push([r.id, r.date, r.day, r.teacherAbsentId, r.teacherAbsentName, r.subTeacherId, r.subTeacherName, String(!!r.subIsPool), r.reason||'', JSON.stringify(r.periods), r.createdAt]);
   });
 
-  const poolRows = [['id','nombre','nota','horasContratadas','disponibilidad_json']];
-  STATE.pool.forEach(p=>{
-    poolRows.push([p.id, p.name, p.note||'', p.hours!=null?p.hours:'', JSON.stringify(p.availability||{})]);
-  });
-
   const horasRows = [['profesorId','profesorNombre','dia','hora','categoria','categoriaEtiqueta']];
   Object.keys(STATE.extraHours||{}).forEach(tid=>{
     const t = teacherById(tid);
@@ -488,7 +453,7 @@ function stateToRows(){
     });
   });
 
-  return { Reemplazos: reemplazosRows, Pool: poolRows, HorasAdicionales: horasRows, Asignaturas: asigRows };
+  return { Reemplazos: reemplazosRows, HorasAdicionales: horasRows, Asignaturas: asigRows };
 }
 
 async function pushStateToSheet(){
@@ -531,13 +496,6 @@ async function pullStateFromSheet(){
     });
   });
 
-  (byTab.Pool||[]).slice(1).forEach(row=>{
-    if(!row[0]) return;
-    let availability = {};
-    try{ availability = JSON.parse(row[4]||'{}'); }catch(e){}
-    newState.pool.push({ id: row[0], name: row[1], note: row[2]||'', hours: row[3]?Number(row[3]):null, availability });
-  });
-
   (byTab.HorasAdicionales||[]).slice(1).forEach(row=>{
     if(!row[0]) return;
     const tid=row[0], day=row[2], time=row[3], cat=row[4];
@@ -553,7 +511,7 @@ async function pullStateFromSheet(){
     newState.subjects[tid][course] = subj;
   });
 
-  STATE = newState;
+  STATE = migratePoolIntoTeachers(newState);
   saveState(); // refresh local cache too
   return true;
 }
@@ -649,14 +607,8 @@ const CATS = {
   'fc': {label:'FC', cls:'cat-fc'},
   'atencionestudiantes': {label:'NL-AE', cls:'cat-atencionestudiantes'},
   'pad': {label:'Horas PAD', cls:'cat-pad'},
+  'emergencia': {label:'Emergencia', cls:'cat-emergencia'},
   'otro': {label:'Otra actividad', cls:'cat-otro'}
-};
-
-// Categories for pool-member (Profesores PAD/Otros) weekly availability
-const POOL_CATS = {
-  '': {label:'No disponible', cls:'cat-vacio'},
-  'pad': {label:'Horas PAD', cls:'cat-pad'},
-  'emergencia': {label:'Emergencia', cls:'cat-emergencia'}
 };
 
 // Listado oficial de asignaturas disponibles para asignar a cada profesor(a)/curso
@@ -686,6 +638,7 @@ function defaultState(){
 }
 
 let STATE = loadState();
+saveState(); // persist immediately in case loadState() just migrated old data (e.g. Profesores PAD/Otros → Profesores)
 
 function loadState(){
   try{
@@ -695,10 +648,32 @@ function loadState(){
       const merged = Object.assign(defaultState(), parsed);
       // migrate pool entries to have availability object + email field
       merged.pool = (merged.pool||[]).map(p=> Object.assign({availability:{}, email:''}, p));
-      return merged;
+      return migratePoolIntoTeachers(merged);
     }
   }catch(e){ console.warn('No se pudo leer almacenamiento local', e); }
   return defaultState();
+}
+
+// Los "Profesores PAD/Otros" (pool) se unifican con el listado normal de profesores(as): cada persona del
+// pool pasa a ser un profesor(a) más (mismo id, para no perder el historial de reemplazos ya registrado),
+// con horario en blanco, y sus bloques de disponibilidad (PAD/Emergencia) quedan como Horas Adicionales.
+function migratePoolIntoTeachers(state){
+  if(!state.pool || !state.pool.length) return state;
+  state.pool.forEach(p=>{
+    const alreadyMigrated = state.customTeachers.some(t=>t.id===p.id);
+    if(!alreadyMigrated){
+      state.customTeachers.push({ id:p.id, name:p.name, days: blankSchedule(), custom:true });
+    }
+    if(p.email && !state.teacherEmails[p.id]) state.teacherEmails[p.id] = p.email;
+    if(p.availability){
+      state.extraHours[p.id] = state.extraHours[p.id] || {};
+      Object.keys(p.availability).forEach(day=>{
+        state.extraHours[p.id][day] = Object.assign({}, p.availability[day], state.extraHours[p.id][day]||{});
+      });
+    }
+  });
+  state.pool = [];
+  return state;
 }
 
 function saveState(){
@@ -817,7 +792,7 @@ function teacherCoursesTaught(teacher){
 }
 
 function teacherStats(teacher){
-  let lectivas=0; const cat={libre:0,apoderados:0,pie:0,cdp:0,cat:0,pastoral:0,acp:0,ace:0,jefedepto:0,nlal:0,cra:0,fc:0,atencionestudiantes:0,pad:0,otro:0,sinasignar:0};
+  let lectivas=0; const cat={libre:0,apoderados:0,pie:0,cdp:0,cat:0,pastoral:0,acp:0,ace:0,jefedepto:0,nlal:0,cra:0,fc:0,atencionestudiantes:0,pad:0,emergencia:0,otro:0,sinasignar:0};
   DAYS.forEach(day=>{
     (teacher.days[day]||[]).forEach(s=>{
       if(s.isBreak) return;
@@ -828,48 +803,19 @@ function teacherStats(teacher){
       }
     });
   });
-  const extraTotal = cat.libre+cat.apoderados+cat.pie+cat.cdp+cat.cat+cat.pastoral+cat.acp+cat.ace+cat.jefedepto+cat.nlal+cat.cra+cat.fc+cat.atencionestudiantes+cat.pad+cat.otro;
+  const extraTotal = cat.libre+cat.apoderados+cat.pie+cat.cdp+cat.cat+cat.pastoral+cat.acp+cat.ace+cat.jefedepto+cat.nlal+cat.cra+cat.fc+cat.atencionestudiantes+cat.pad+cat.emergencia+cat.otro;
   return {lectivas, cat, extraTotal, total: lectivas+extraTotal};
 }
 
-function replacementHoursForTeacher(teacherId, isPool){
+function replacementHoursForTeacher(teacherId){
   let count=0;
   STATE.replacements.forEach(r=>{
-    if(isPool ? (r.subIsPool && r.subTeacherId===teacherId) : (!r.subIsPool && r.subTeacherId===teacherId)){
-      count += r.periods.length;
-    }
+    if(r.subTeacherId===teacherId) count += r.periods.length;
   });
   return count;
 }
 
 // ---------- pool availability helpers ----------
-function poolById(id){ return STATE.pool.find(p=>p.id===id); }
-function getPoolAvail(pool, day, time){
-  return (pool.availability && pool.availability[day] && pool.availability[day][time]) || '';
-}
-function setPoolAvail(poolId, day, time, cat){
-  const p = poolById(poolId);
-  if(!p) return;
-  p.availability = p.availability || {};
-  p.availability[day] = p.availability[day] || {};
-  if(cat) p.availability[day][time] = cat;
-  else delete p.availability[day][time];
-  saveState();
-}
-function poolHasAnyAvailability(pool){
-  if(!pool.availability) return false;
-  return Object.values(pool.availability).some(dayObj => Object.keys(dayObj||{}).length>0);
-}
-function poolAvailCounts(pool){
-  let pad=0, emergencia=0;
-  if(pool.availability){
-    Object.values(pool.availability).forEach(dayObj=>{
-      Object.values(dayObj||{}).forEach(v=>{ if(v==='pad') pad++; else if(v==='emergencia') emergencia++; });
-    });
-  }
-  return {pad, emergencia, total: pad+emergencia};
-}
-
 // ---------- tabs ----------
 document.querySelectorAll('nav.tabs button').forEach(btn=>{
   btn.addEventListener('click', ()=>{
@@ -884,7 +830,7 @@ document.querySelectorAll('nav.tabs button').forEach(btn=>{
 // ---------- header summary ----------
 function renderHeaderSummary(){
   document.getElementById('dataSummary').textContent =
-    `${allTeachers().length} profesores(as) · ${DATA.allCourses.length} cursos · ${STATE.pool.length} en Profesores PAD/Otros · ${STATE.replacements.length} reemplazos registrados`;
+    `${allTeachers().length} profesores(as) · ${DATA.allCourses.length} cursos · ${STATE.replacements.length} reemplazos registrados`;
 }
 
 // ================= TAB PROFESORES =================
@@ -921,6 +867,8 @@ document.getElementById('btnNewTeacher').addEventListener('click', ()=>{
   const id = createTeacher(name.trim());
   teacherSearch.value = name.trim();
   renderHeaderSummary();
+  initHorasSelect();
+  refreshRepTeacherOptions();
   selectTeacher(id);
   toast('Profesor(a) creado(a). Su horario parte vacío: puedes categorizar sus horas en la pestaña Horas Adicionales.');
 });
@@ -990,6 +938,7 @@ function legendHtml(){
     <span><span class="swatch" style="background:var(--fc)"></span>FC – Formación Ciudadana</span>
     <span><span class="swatch" style="background:var(--atencion)"></span>NL-AE – Atención de Estudiantes</span>
     <span><span class="swatch" style="background:var(--pad)"></span>Horas PAD</span>
+    <span><span class="swatch" style="background:var(--emergencia)"></span>Emergencia</span>
     <span><span class="swatch" style="background:var(--otro)"></span>Otra actividad</span>
     <span><span class="swatch" style="background:var(--sinasignar)"></span>Sin asignar</span>
     <span><span class="swatch" style="background:var(--break)"></span>Recreo</span>
@@ -1005,7 +954,7 @@ function renderTeacherDetail(id){
   const wrap = document.getElementById('teacherDetail');
   if(!teacher){ wrap.innerHTML=''; return; }
   const stats = teacherStats(teacher);
-  const repHoras = replacementHoursForTeacher(teacher.id, false);
+  const repHoras = replacementHoursForTeacher(teacher.id);
   wrap.innerHTML = `
     <div class="panel">
       <div class="row" style="justify-content:space-between; align-items:center;">
@@ -1037,6 +986,7 @@ function renderTeacherDetail(id){
         <div class="stat"><div class="num">${stats.cat.fc}</div><div class="lbl">FC (Formación Ciudadana)</div></div>
         <div class="stat"><div class="num">${stats.cat.atencionestudiantes}</div><div class="lbl">NL-AE (Atención de Estudiantes)</div></div>
         <div class="stat"><div class="num">${stats.cat.pad}</div><div class="lbl">Horas PAD</div></div>
+        <div class="stat"><div class="num">${stats.cat.emergencia}</div><div class="lbl">Emergencia</div></div>
         <div class="stat"><div class="num">${stats.cat.otro}</div><div class="lbl">Otra actividad</div></div>
         <div class="stat"><div class="num">${stats.total}</div><div class="lbl">Total horas registradas</div></div>
         <div class="stat"><div class="num">${repHoras}</div><div class="lbl">Horas de reemplazo realizadas</div></div>
@@ -1083,6 +1033,8 @@ function renderTeacherDetail(id){
       toast('Nombre actualizado');
       renderTeacherDetail(id);
       renderHeaderSummary();
+      initHorasSelect();
+      refreshRepTeacherOptions();
     }
   });
   document.getElementById('btnDeleteTeacher').addEventListener('click', ()=>{
@@ -1093,6 +1045,8 @@ function renderTeacherDetail(id){
     wrap.innerHTML = '';
     toast('Profesor(a) eliminado(a)');
     renderHeaderSummary();
+    initHorasSelect();
+    refreshRepTeacherOptions();
   });
 }
 
@@ -1144,8 +1098,10 @@ function renderCourseDetail(course){
 // ================= TAB HORAS ADICIONALES =================
 const horasTeacherSelect = document.getElementById('horasTeacherSelect');
 function initHorasSelect(){
+  const current = horasTeacherSelect.value;
   horasTeacherSelect.innerHTML = '<option value="">Selecciona...</option>' +
     allTeachers().map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+  if(current) horasTeacherSelect.value = current;
 }
 horasTeacherSelect.addEventListener('change', ()=> renderHorasDetail(horasTeacherSelect.value));
 
@@ -1174,9 +1130,14 @@ const repReason = document.getElementById('repReason');
 const repDayInfo = document.getElementById('repDayInfo');
 const repPeriodsWrap = document.getElementById('repPeriods');
 
-function initRepSelect(){
+function refreshRepTeacherOptions(){
+  const current = repTeacherSelect.value;
   repTeacherSelect.innerHTML = '<option value="">Selecciona...</option>' +
     allTeachers().map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+  if(current) repTeacherSelect.value = current;
+}
+function initRepSelect(){
+  refreshRepTeacherOptions();
   const today = new Date();
   repDate.value = today.toISOString().slice(0,10);
 }
@@ -1220,20 +1181,7 @@ function candidatesFor(day, time, excludeTeacherId){
     const cat = getExtra(t.id, day, time);
     const catKey = cat || 'libre';
     const free = !cat || cat==='libre';
-    list.push({id:t.id, name:t.name, isPool:false, free, catKey, catLabel: cat ? CATS[cat].label : 'NLP'});
-  });
-  STATE.pool.forEach(p=>{
-    const clash = STATE.replacements.find(r=> r.subIsPool && r.subTeacherId===p.id && r.day===day && r.periods.some(pp=>pp.time===time));
-    if(clash) return;
-    const hasSchedule = poolHasAnyAvailability(p);
-    if(hasSchedule){
-      const avail = getPoolAvail(p, day, time);
-      if(!avail) return; // not marked available at this exact block
-      list.push({id:p.id, name:p.name+' (PAD/Otros)', isPool:true, free:true, catKey: avail, catLabel: POOL_CATS[avail].label, isPad: avail==='pad'});
-    } else {
-      // no availability schedule configured: treat as always available (legacy behavior)
-      list.push({id:p.id, name:p.name+' (PAD/Otros)', isPool:true, free:true, catKey:'otro', catLabel:'Externo/Pool (sin horario definido)'});
-    }
+    list.push({id:t.id, name:t.name, isPool:false, free, catKey, catLabel: cat ? CATS[cat].label : 'NLP', isPad: catKey==='pad'});
   });
   list.sort((a,b)=> candidatePriority(a.catKey)-candidatePriority(b.catKey) || a.name.localeCompare(b.name));
   return list;
@@ -1287,9 +1235,7 @@ document.getElementById('btnRegisterRep').addEventListener('click', ()=>{
     if(!checked) return;
     const sel = row.querySelector('.repSub');
     if(!sel.value) return;
-    const opt = sel.selectedOptions[0];
-    const isPool = opt.dataset.pool === 'true';
-    const subName = isPool ? STATE.pool.find(p=>p.id===sel.value).name : teacherById(sel.value).name;
+    const subTeacher = teacherById(sel.value);
     const record = {
       id: 'r_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
       date: repDate.value,
@@ -1297,8 +1243,8 @@ document.getElementById('btnRegisterRep').addEventListener('click', ()=>{
       teacherAbsentId: teacherId,
       teacherAbsentName: teacher.name,
       subTeacherId: sel.value,
-      subTeacherName: subName,
-      subIsPool: isPool,
+      subTeacherName: subTeacher ? subTeacher.name : sel.value,
+      subIsPool: false,
       reason: repReason.value.trim(),
       periods: [{time: row.dataset.time, course: row.dataset.course}],
       createdAt: new Date().toISOString()
@@ -1337,137 +1283,11 @@ function renderRecentReplacements(){
   });
 }
 
-// ================= TAB POOL =================
-function renderPoolAvailGrid(pool){
-  let maxRows = 0;
-  DAYS.forEach(d=> maxRows = Math.max(maxRows, periodsForDay(d).length));
-  let html = '<table class="grid"><thead><tr><th>Horario</th>';
-  DAYS.forEach(d=> html += `<th>${d}</th>`);
-  html += '</tr></thead><tbody>';
-  for(let i=0;i<maxRows;i++){
-    html += '<tr>';
-    const refDay = DAYS.find(d=>periodsForDay(d)[i]);
-    html += `<td class="timecol">${refDay ? periodsForDay(refDay)[i].time.replace('-',' – ') : ''}</td>`;
-    DAYS.forEach(day=>{
-      const p = periodsForDay(day)[i];
-      if(!p){ html += '<td></td>'; return; }
-      if(p.isBreak){ html += '<td class="break">Recreo</td>'; return; }
-      const cat = getPoolAvail(pool, day, p.time);
-      const catInfo = POOL_CATS[cat] || POOL_CATS[''];
-      html += `<td class="${catInfo.cls} cell-empty"><select data-pool="${pool.id}" data-day="${day}" data-time="${p.time}">`;
-      Object.keys(POOL_CATS).forEach(k=>{
-        html += `<option value="${k}" ${k===cat?'selected':''}>${POOL_CATS[k].label}</option>`;
-      });
-      html += `</select></td>`;
-    });
-    html += '</tr>';
-  }
-  html += '</tbody></table>';
-  return html;
-}
-
-let expandedPoolId = null;
-
-function renderPoolList(){
-  const wrap = document.getElementById('poolList');
-  if(!STATE.pool.length){ wrap.innerHTML = '<div class="empty-state">No hay profesores(as) en el pool aún.</div>'; return; }
-  wrap.innerHTML = STATE.pool.map(p=>{
-    const counts = poolAvailCounts(p);
-    const hasSchedule = poolHasAnyAvailability(p);
-    return `
-    <div class="list-item pool-item">
-      <div class="pool-head">
-        <div style="flex:1; min-width:260px;">
-          <b>${escapeHtml(p.name)}</b>
-          <div class="meta">
-            ${escapeHtml(p.note||'')} ${p.hours?('· '+p.hours+' hrs/semana contratadas'):''}
-            · ${replacementHoursForTeacher(p.id,true)} hrs de reemplazo realizadas
-            ${hasSchedule ? `· ${counts.pad} hrs PAD${counts.emergencia? ' · '+counts.emergencia+' hrs Emergencia':''}` : '· sin horario definido (disponible siempre)'}
-          </div>
-          <div class="field no-print" style="margin-top:6px; max-width:260px;">
-            <label style="font-size:11px;">Correo electrónico (para reportes)</label>
-            <input type="text" class="poolEmailInput" data-poolemail="${p.id}" value="${escapeHtml(p.email||'')}" placeholder="nombre@correo.com">
-          </div>
-          ${p.email? '' : '<div class="helptext" style="color:var(--warn);">Sin correo: no recibirá el reporte diario individualmente.</div>'}
-        </div>
-        <div class="no-print" style="display:flex; gap:6px;">
-          <button class="btn small" data-toggleavail="${p.id}">${expandedPoolId===p.id ? '▲ Ocultar horario' : '▾ Horas disponibles / PAD'}</button>
-          <button class="btn small danger" data-delpool="${p.id}">Eliminar</button>
-        </div>
-      </div>
-      <div class="pool-avail-wrap ${expandedPoolId===p.id?'show':''}" id="pool-avail-${p.id}">
-        <p class="helptext">Marca cada bloque como <b>Horas PAD</b> o <b>Emergencia</b>. Si dejas todo el horario en "No disponible", esta persona aparecerá como candidata en cualquier horario (comportamiento por defecto).</p>
-        ${expandedPoolId===p.id ? renderPoolAvailGrid(p) : ''}
-      </div>
-    </div>`;
-  }).join('');
-  wrap.querySelectorAll('[data-delpool]').forEach(b=>{
-    b.addEventListener('click', ()=>{
-      STATE.pool = STATE.pool.filter(p=>p.id!==b.dataset.delpool);
-      saveState();
-      renderPoolList();
-      renderRepPeriods();
-      renderHeaderSummary();
-    });
-  });
-  wrap.querySelectorAll('[data-toggleavail]').forEach(b=>{
-    b.addEventListener('click', ()=>{
-      const id = b.dataset.toggleavail;
-      expandedPoolId = expandedPoolId===id ? null : id;
-      renderPoolList();
-    });
-  });
-  wrap.querySelectorAll('.poolEmailInput').forEach(inp=>{
-    inp.addEventListener('change', ()=>{
-      const p = poolById(inp.dataset.poolemail);
-      if(!p) return;
-      p.email = inp.value.trim();
-      saveState();
-      toast('Correo guardado');
-      renderPoolList();
-    });
-  });
-  wrap.querySelectorAll('select[data-pool]').forEach(sel=>{
-    sel.addEventListener('change', ()=>{
-      setPoolAvail(sel.dataset.pool, sel.dataset.day, sel.dataset.time, sel.value);
-      toast('Guardado');
-      sel.closest('td').className = (POOL_CATS[sel.value]||POOL_CATS['']).cls + ' cell-empty';
-      // update the summary line without a full re-render (keep grid open)
-      const p = poolById(sel.dataset.pool);
-      const counts = poolAvailCounts(p);
-      const metaEl = sel.closest('.pool-item').querySelector('.meta');
-      const hasSchedule = poolHasAnyAvailability(p);
-      metaEl.innerHTML = `${escapeHtml(p.note||'')} ${p.hours?('· '+p.hours+' hrs/semana contratadas'):''}
-            · ${replacementHoursForTeacher(p.id,true)} hrs de reemplazo realizadas
-            ${hasSchedule ? `· ${counts.pad} hrs PAD${counts.emergencia? ' · '+counts.emergencia+' hrs Emergencia':''}` : '· sin horario definido (disponible siempre)'}`;
-      renderRepPeriods();
-    });
-  });
-}
-document.getElementById('btnAddPool').addEventListener('click', ()=>{
-  const name = document.getElementById('poolName').value.trim();
-  if(!name){ toast('Ingresa un nombre'); return; }
-  const note = document.getElementById('poolNote').value.trim();
-  const hours = document.getElementById('poolHours').value;
-  const email = document.getElementById('poolEmail').value.trim();
-  const id = 'p_'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
-  STATE.pool.push({id, name, note, email, hours: hours?Number(hours):null, availability:{}});
-  saveState();
-  document.getElementById('poolName').value='';
-  document.getElementById('poolNote').value='';
-  document.getElementById('poolHours').value='';
-  document.getElementById('poolEmail').value='';
-  expandedPoolId = id;
-  renderPoolList();
-  toast('Agregado al pool. Puedes definir sus horas disponibles o PAD abajo.');
-});
-
 // ================= TAB REPORTES =================
 function initReportFilters(){
   const sel = document.getElementById('repFilterTeacher');
   const allSubs = new Map();
   allTeachers().forEach(t=>allSubs.set(t.id, t.name));
-  STATE.pool.forEach(p=>allSubs.set(p.id, p.name+' (Pool)'));
   sel.innerHTML = '<option value="">Todos</option>' + [...allSubs.entries()].map(([id,name])=>`<option value="${id}">${name}</option>`).join('');
 }
 
@@ -1552,8 +1372,7 @@ document.getElementById('btnCsvReport').addEventListener('click', ()=>{
 });
 
 // ---------- Reporte diario para enviar por correo ----------
-function getEmailForSub(id, isPool){
-  if(isPool){ const p = STATE.pool.find(x=>x.id===id); return p ? (p.email||'') : ''; }
+function getEmailForSub(id){
   return getTeacherEmail(id);
 }
 
@@ -1579,7 +1398,7 @@ function renderDailyPreview(){
   document.getElementById('printDate').textContent = 'Fecha: ' + formatDateEs(date);
   if(!records.length){ wrap.innerHTML = `<div class="empty-state">No hay reemplazos registrados para el ${formatDateEs(date)}.</div>`; return; }
   wrap.innerHTML = groups.map(g=>{
-    const email = getEmailForSub(g.id, g.isPool);
+    const email = getEmailForSub(g.id);
     return `<div class="list-item" style="flex-direction:column; align-items:stretch;">
       <div class="pool-head">
         <b>${escapeHtml(g.name)}</b>
@@ -1682,14 +1501,14 @@ async function sendDailyReports(){
     return;
   }
 
-  if(!ccList.length && !groups.some(g=>getEmailForSub(g.id, g.isPool))){
+  if(!ccList.length && !groups.some(g=>getEmailForSub(g.id))){
     statusEl.textContent = 'Ningún reemplazante de ese día tiene correo asignado, y no ingresaste ninguna copia (CC) — no hay a quién enviar. Agrega el correo del profesor(a) o al menos una copia.';
     return;
   }
 
   let sent = 0, skipped = 0, failed = 0;
   for(const g of groups){
-    const email = getEmailForSub(g.id, g.isPool);
+    const email = getEmailForSub(g.id);
     // Si el reemplazante no tiene correo propio, se envía igual usando las copias como destinatario principal
     // (para que el reporte no se pierda), avisando en el cuerpo que falta registrar su correo.
     const to = email || ccList[0];
@@ -1738,7 +1557,8 @@ document.getElementById('fileImport').addEventListener('change', (e)=>{
     try{
       const parsed = JSON.parse(reader.result);
       STATE = Object.assign(defaultState(), parsed);
-      STATE.pool = (STATE.pool||[]).map(p=> Object.assign({availability:{}}, p));
+      STATE.pool = (STATE.pool||[]).map(p=> Object.assign({availability:{}, email:''}, p));
+      STATE = migratePoolIntoTeachers(STATE);
       saveState();
       toast('Datos importados correctamente');
       refreshAll();
@@ -1761,7 +1581,6 @@ function refreshAll(){
   renderHeaderSummary();
   if(currentTeacherId) renderTeacherDetail(currentTeacherId);
   if(horasTeacherSelect.value) renderHorasDetail(horasTeacherSelect.value);
-  renderPoolList();
   renderRecentReplacements();
   renderRepPeriods();
   renderReport();
@@ -1774,7 +1593,6 @@ initCourseSelect();
 initHorasSelect();
 initRepSelect();
 renderHeaderSummary();
-renderPoolList();
 renderRecentReplacements();
 if(DATA.allCourses.length) renderCourseDetail(sortCourses(DATA.allCourses)[0]);
 
