@@ -380,7 +380,10 @@ function scheduleTokenRefresh(expiresInSeconds){
   // renew ~5 minutes before the token actually expires, while the tab stays open
   const ms = Math.max(30, (expiresInSeconds || 3600) - 300) * 1000;
   gTokenRefreshTimer = setTimeout(()=>{
-    requestGoogleToken({silent:true}).catch(err=>{ console.warn('Renovación silenciosa de token falló', err); });
+    withTimeout(requestGoogleToken({silent:true}), 8000, 'Renovación de token sin respuesta').catch(err=>{
+      console.warn('Renovación silenciosa de token falló', err);
+      setSyncStatus('La sesión de Google expiró — haz clic en "Reconectar Google Sheets"', false);
+    });
   }, ms);
 }
 
@@ -399,14 +402,24 @@ function requestGoogleToken(opts){
   });
 }
 
+function withTimeout(promise, ms, msg){
+  return new Promise((resolve, reject)=>{
+    const timer = setTimeout(()=>reject(new Error(msg || 'Tiempo de espera agotado')), ms);
+    promise.then(v=>{ clearTimeout(timer); resolve(v); }, err=>{ clearTimeout(timer); reject(err); });
+  });
+}
+
 async function autoConnectIfPossible(){
   if(!gSpreadsheetId) return;
   let tries = 0;
   while(!gTokenClient && tries < 25){ await new Promise(r=>setTimeout(r,200)); tries++; }
-  if(!gTokenClient) return;
+  if(!gTokenClient){
+    setSyncStatus('No se pudo cargar el servicio de Google (revisa tu conexión o si algún bloqueador de anuncios está interfiriendo) — haz clic en "Reconectar Google Sheets" para reintentar', false);
+    return;
+  }
   try{
     setSyncStatus('Reconectando a Google Sheets automáticamente...', false);
-    await requestGoogleToken({silent:true});
+    await withTimeout(requestGoogleToken({silent:true}), 8000, 'La sesión de Google no respondió (posiblemente bloqueada por el navegador)');
     await ensureTabsExist(gSpreadsheetId);
     await pullStateFromSheet();
     refreshAll();
@@ -417,7 +430,7 @@ async function autoConnectIfPossible(){
     setSyncStatus('Conectado a Google Sheets', true);
   }catch(err){
     console.warn('No se pudo reconectar automáticamente', err);
-    setSyncStatus('Planilla vinculada, pero se cerró la sesión de Google — haz clic en "Reconectar Google Sheets"', false);
+    setSyncStatus('Planilla vinculada — haz clic en "Reconectar Google Sheets" para iniciar sesión', false);
   }
 }
 
