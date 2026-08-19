@@ -1377,13 +1377,18 @@ function renderPoolList(){
     return `
     <div class="list-item pool-item">
       <div class="pool-head">
-        <div>
-          <b>${escapeHtml(p.name)}</b>${p.email?` <span class="meta">(${escapeHtml(p.email)})</span>`:''}
+        <div style="flex:1; min-width:260px;">
+          <b>${escapeHtml(p.name)}</b>
           <div class="meta">
             ${escapeHtml(p.note||'')} ${p.hours?('· '+p.hours+' hrs/semana contratadas'):''}
             · ${replacementHoursForTeacher(p.id,true)} hrs de reemplazo realizadas
             ${hasSchedule ? `· ${counts.pad} hrs PAD${counts.emergencia? ' · '+counts.emergencia+' hrs Emergencia':''}` : '· sin horario definido (disponible siempre)'}
           </div>
+          <div class="field no-print" style="margin-top:6px; max-width:260px;">
+            <label style="font-size:11px;">Correo electrónico (para reportes)</label>
+            <input type="text" class="poolEmailInput" data-poolemail="${p.id}" value="${escapeHtml(p.email||'')}" placeholder="nombre@correo.com">
+          </div>
+          ${p.email? '' : '<div class="helptext" style="color:var(--warn);">Sin correo: no recibirá el reporte diario individualmente.</div>'}
         </div>
         <div class="no-print" style="display:flex; gap:6px;">
           <button class="btn small" data-toggleavail="${p.id}">${expandedPoolId===p.id ? '▲ Ocultar horario' : '▾ Horas disponibles / PAD'}</button>
@@ -1391,7 +1396,7 @@ function renderPoolList(){
         </div>
       </div>
       <div class="pool-avail-wrap ${expandedPoolId===p.id?'show':''}" id="pool-avail-${p.id}">
-        <p class="helptext">Marca cada bloque como <b>Disponible para reemplazo</b> o <b>Horas PAD</b>. Si dejas todo el horario en "No disponible", esta persona aparecerá como candidata en cualquier horario (comportamiento por defecto).</p>
+        <p class="helptext">Marca cada bloque como <b>Horas PAD</b> o <b>Emergencia</b>. Si dejas todo el horario en "No disponible", esta persona aparecerá como candidata en cualquier horario (comportamiento por defecto).</p>
         ${expandedPoolId===p.id ? renderPoolAvailGrid(p) : ''}
       </div>
     </div>`;
@@ -1409,6 +1414,16 @@ function renderPoolList(){
     b.addEventListener('click', ()=>{
       const id = b.dataset.toggleavail;
       expandedPoolId = expandedPoolId===id ? null : id;
+      renderPoolList();
+    });
+  });
+  wrap.querySelectorAll('.poolEmailInput').forEach(inp=>{
+    inp.addEventListener('change', ()=>{
+      const p = poolById(inp.dataset.poolemail);
+      if(!p) return;
+      p.email = inp.value.trim();
+      saveState();
+      toast('Correo guardado');
       renderPoolList();
     });
   });
@@ -1568,7 +1583,7 @@ function renderDailyPreview(){
     return `<div class="list-item" style="flex-direction:column; align-items:stretch;">
       <div class="pool-head">
         <b>${escapeHtml(g.name)}</b>
-        <span class="${email?'badge ok':'badge warn'}">${email? escapeHtml(email) : 'Sin correo asignado — no se enviará'}</span>
+        <span class="${email?'badge ok':'badge warn'}">${email? escapeHtml(email) : 'Sin correo asignado — se enviará solo a las copias (si agregas alguna)'}</span>
       </div>
       <table style="margin-top:8px;">
         <thead><tr><th>Hora</th><th>Curso</th><th>Profesor(a) ausente</th></tr></thead>
@@ -1667,28 +1682,38 @@ async function sendDailyReports(){
     return;
   }
 
+  if(!ccList.length && !groups.some(g=>getEmailForSub(g.id, g.isPool))){
+    statusEl.textContent = 'Ningún reemplazante de ese día tiene correo asignado, y no ingresaste ninguna copia (CC) — no hay a quién enviar. Agrega el correo del profesor(a) o al menos una copia.';
+    return;
+  }
+
   let sent = 0, skipped = 0, failed = 0;
   for(const g of groups){
     const email = getEmailForSub(g.id, g.isPool);
-    if(!email){ skipped++; continue; }
+    // Si el reemplazante no tiene correo propio, se envía igual usando las copias como destinatario principal
+    // (para que el reporte no se pierda), avisando en el cuerpo que falta registrar su correo.
+    const to = email || ccList[0];
+    const cc = email ? ccList : ccList.slice(1);
+    if(!to){ skipped++; continue; }
     const bodyLines = [
       `Estimado(a) ${g.name},`, '',
       `Le informamos el detalle de los reemplazos que realizó el ${formatDateEs(date)}:`, '',
       ...g.items.map(r=> `• ${r.periods.map(p=>p.time).join(', ')} — Curso ${r.periods.map(p=>p.course).join(', ')} — en reemplazo de ${r.teacherAbsentName}${r.reason?(' ('+r.reason+')'):''}`),
       '', `Total: ${g.hours} hora(s) pedagógica(s) de reemplazo.`, '',
+      ...(email? [] : ['(Nota: este/a profesor(a) no tiene un correo registrado en la app; este mensaje se envió solo a los destinatarios en copia.)', '']),
       'Saludos cordiales,', 'Coordinación Académica'
     ];
     try{
-      await sendGmail({ to: email, cc: ccList, subject: `Reporte de Reemplazo — ${formatDateEs(date)}`, bodyText: bodyLines.join('\n') });
+      await sendGmail({ to, cc, subject: `Reporte de Reemplazo — ${g.name} — ${formatDateEs(date)}`, bodyText: bodyLines.join('\n') });
       sent++;
     }catch(err){
-      console.warn('Error enviando a', email, err);
+      console.warn('Error enviando para', g.name, err);
       failed++;
     }
     statusEl.textContent = `Enviando... (${sent} enviado(s) hasta ahora)`;
   }
   statusEl.textContent = `Listo: ${sent} correo(s) enviado(s)` +
-    (skipped ? `, ${skipped} omitido(s) por falta de correo` : '') +
+    (skipped ? `, ${skipped} omitido(s) por falta de correo y de copias` : '') +
     (failed ? `, ${failed} fallaron` : '') + '.';
   toast('Envío de correos finalizado');
 }
